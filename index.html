@@ -1,0 +1,597 @@
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Morphing Shapes</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+    *, *::before, *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    body {
+        font-family: "Inter", sans-serif;
+        overflow: hidden;
+        background: #040307; 
+        background-image:
+            radial-gradient(circle at 50% 35%, #1d1431 0%, transparent 65%),
+            linear-gradient(180deg, #000000 0%, #070012 100%);
+        color: #eee;
+    }
+    #container {
+        position: fixed;
+        inset: 0;
+    }
+    .vignette {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 9;
+        background: radial-gradient(circle at center, rgba(0,0,0,0) 65%, rgba(0,0,0,.5) 100%);
+    }
+    canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+    }
+
+    .instructions {
+        position: fixed;
+        left: 24px;
+        bottom: 24px;
+        transform: none;
+        padding: 10px 20px;
+        font-size: 12px;
+        text-align: left;
+        pointer-events: none;
+        color: #d0b0ff;
+        background: rgba(18, 15, 40, 0.25);
+        border: 1px solid rgba(122, 70, 255, 0.28);
+        border-radius: 12px;
+        backdrop-filter: blur(12px);
+        z-index: 10;
+        box-shadow: 0 4px 20px rgba(0,0,0,.45);
+    }
+
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"
+  }
+}
+</script>
+
+<div id="container"></div>
+<div class="vignette"></div>
+<div class="instructions">Drag to explore</div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+const PARTICLE_COUNT = 2605;
+const BACKGROUND_PARTICLE_COUNT = 5000; // Летающие частицы вокруг модели
+const DIGIT_SIZE_MULTIPLIER = 3; // Множитель размера цифр
+
+const colorSettings = {
+    color0: new THREE.Vector3(1.0, 1.0, 1.0), // Цвет для нулей (белый) RGB 0-1
+    color1: new THREE.Vector3(42/255, 241/255, 107/255), // Цвет для единиц rgb(42, 241, 107) RGB 0-1
+    bgColor0: new THREE.Vector3(1.0, 1.0, 1.0), // Цвет для фоновых нулей (белый) RGB 0-1
+    bgColor1: new THREE.Vector3(42/255, 241/255, 107/255), // Цвет для фоновых единиц rgb(42, 241, 107) RGB 0-1
+    size0: 1.0, // Размер нулей
+    size1: 1.0, // Размер единиц
+    shadowIntensity: 0.75 // Интенсивность теней (0.0 - нет теней, 1.0 - максимальные тени)
+};
+
+let scene, camera, renderer, controls;
+let particles, backgroundParticles;
+let clock = new THREE.Clock();
+let digitTexture0, digitTexture1;
+
+function normalise(points, size) {
+    if (points.length === 0) return [];
+    const box = new THREE.Box3().setFromPoints(points);
+    const maxDim = Math.max(...box.getSize(new THREE.Vector3()).toArray()) || 1;
+    const centre = box.getCenter(new THREE.Vector3());
+    return points.map(p => p.clone().sub(centre).multiplyScalar(size / maxDim));
+}
+
+// Функция для извлечения вершин из 3D модели
+async function loadModelPattern(modelPath, targetCount) {
+    return new Promise((resolve, reject) => {
+        const loader = new GLTFLoader();
+        loader.load(
+            modelPath,
+            (gltf) => {
+                const points = [];
+                
+                // Рекурсивно обходим все меши в модели
+                gltf.scene.traverse((child) => {
+                    if (child.isMesh) {
+                        const geometry = child.geometry;
+                        const positionAttribute = geometry.attributes.position;
+                        
+                        // Получаем мировую матрицу для правильного позиционирования
+                        child.updateMatrixWorld();
+                        const worldMatrix = child.matrixWorld;
+                        
+                        // Извлекаем все вершины
+                        for (let i = 0; i < positionAttribute.count; i++) {
+                            const vertex = new THREE.Vector3().fromBufferAttribute(positionAttribute, i);
+                            vertex.applyMatrix4(worldMatrix);
+                            points.push(vertex);
+                        }
+                    }
+                });
+                
+                // Выводим информацию о количестве вершин в консоль
+                const uniqueVertexCount = points.length;
+                console.log(`📊 Модель содержит ${uniqueVertexCount} уникальных вершин`);
+                console.log(`🎯 Запрошено частиц: ${targetCount}`);
+                
+                if (uniqueVertexCount < targetCount) {
+                    console.warn(`⚠️ PARTICLE_COUNT (${targetCount}) больше количества вершин модели (${uniqueVertexCount}). Будут использованы дубликаты.`);
+                    console.log(`💡 Рекомендуется установить PARTICLE_COUNT <= ${uniqueVertexCount} для избежания дублирования`);
+                } else {
+                    console.log(`✅ Достаточно вершин для ${targetCount} частиц`);
+                }
+                
+                // Если точек больше чем нужно, выбираем случайные
+                // Если меньше - дублируем случайные
+                const result = [];
+                if (points.length === 0) {
+                    reject(new Error('Модель не содержит вершин'));
+                    return;
+                }
+                
+                if (points.length >= targetCount) {
+                    // Выбираем случайные точки
+                    const indices = new Set();
+                    while (indices.size < targetCount) {
+                        indices.add(Math.floor(Math.random() * points.length));
+                    }
+                    indices.forEach(idx => result.push(points[idx].clone()));
+                } else {
+                    // Дублируем точки до нужного количества
+                    for (let i = 0; i < targetCount; i++) {
+                        result.push(points[i % points.length].clone());
+                    }
+                }
+                
+                // Нормализуем и возвращаем
+                resolve(normalise(result, 50));
+            },
+            undefined,
+            (error) => {
+                reject(error);
+            }
+        );
+    });
+}
+
+function createTextTexture(text, size = 256) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${size * 0.8}px Inter, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // Если это "1", поворачиваем на 180 градусов и отзеркаливаем
+    if (text === '1') {
+        ctx.translate(size / 2, size / 2);
+        ctx.rotate(Math.PI);
+        ctx.scale(-1, 1); // Отзеркаливаем по горизонтали
+        ctx.translate(-size / 2, -size / 2);
+    }
+    
+    ctx.fillText(text, size / 2, size / 2);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    return texture;
+}
+
+// Простая хеш-функция для детерминированного присвоения цифр на основе позиции
+function hashPosition(x, y, z) {
+    // Используем простую хеш-функцию для получения детерминированного значения
+    const hash = ((x * 73856093) ^ (y * 19349663) ^ (z * 83492791)) >>> 0;
+    return hash % 2; // Возвращает 0 или 1
+}
+
+function makeParticles(count) {
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(count * 3);
+    const size = new Float32Array(count);
+    const digit = new Float32Array(count);
+    const shadowFactor = new Float32Array(count);
+    
+    for (let i = 0; i < count; i++) {
+        size[i] = 2.0; // Увеличиваем размер для большего объема
+        // Цифра будет присвоена детерминированно на основе позиции в applyPattern
+        digit[i] = 0.0; // Временное значение, будет обновлено
+        shadowFactor[i] = 1.0; // Коэффициент затемнения (1.0 = без тени, 0.0 = полная тень)
+    }
+    
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute("size", new THREE.BufferAttribute(size, 1));
+    geo.setAttribute("digit", new THREE.BufferAttribute(digit, 1));
+    geo.setAttribute("shadowFactor", new THREE.BufferAttribute(shadowFactor, 1));
+    
+    const sizeMult = DIGIT_SIZE_MULTIPLIER.toFixed(1);
+    const mat = new THREE.ShaderMaterial({
+        uniforms: {
+            texture0: { value: digitTexture0 },
+            texture1: { value: digitTexture1 },
+            color0: { value: new THREE.Vector3(1.0, 1.0, 1.0) }, // Цвет для нулей (белый)
+            color1: { value: new THREE.Vector3(42/255, 241/255, 107/255) }, // Цвет для единиц rgb(42, 241, 107)
+            size0: { value: 2.0 }, // Размер нулей
+            size1: { value: 2.0 }, // Размер единиц
+            shadowIntensity: { value: 0.7 } // Интенсивность теней
+        },
+        vertexShader: `
+            attribute float size;
+            attribute float digit;
+            attribute float shadowFactor;
+            uniform float size0;
+            uniform float size1;
+            varying float vDigit;
+            varying float vShadowFactor;
+            varying vec3 vPosition;
+            void main() {
+                vDigit = digit;
+                vShadowFactor = shadowFactor;
+                vPosition = position;
+                vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                float finalSize = vDigit < 0.5 ? size0 : size1;
+                gl_PointSize = finalSize * ${sizeMult} * (400.0 / -mv.z);
+                gl_Position = projectionMatrix * mv;
+            }`,
+        fragmentShader: `
+            uniform sampler2D texture0;
+            uniform sampler2D texture1;
+            uniform vec3 color0;
+            uniform vec3 color1;
+            uniform float shadowIntensity;
+            varying float vDigit;
+            varying float vShadowFactor;
+            varying vec3 vPosition;
+            void main() {
+                vec2 uv = gl_PointCoord;
+                vec4 texColor = vDigit < 0.5 ? texture2D(texture0, uv) : texture2D(texture1, uv);
+                if (texColor.a < 0.01) discard;
+                
+                // Выбираем цвет в зависимости от цифры
+                vec3 baseColor = vDigit < 0.5 ? color0 : color1;
+                
+                // Применяем тени через затемнение цвета (не opacity!)
+                // vShadowFactor: 1.0 = полный свет, 0.0 = полная тень
+                // Используем более выраженное затемнение для лучших теней
+                float shadowDarkness = 1.0 - (1.0 - vShadowFactor) * shadowIntensity;
+                vec3 shadowedColor = baseColor * shadowDarkness;
+                
+                gl_FragColor = vec4(shadowedColor, texColor.a);
+            }`,
+        transparent: true,
+        depthWrite: true,
+        blending: THREE.NormalBlending
+    });
+    return new THREE.Points(geo, mat);
+}
+
+// Создает фоновые частицы, которые летают вокруг модели
+function createBackgroundParticles(count) {
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(count * 3);
+    const size = new Float32Array(count);
+    const digit = new Float32Array(count);
+    const velocity = new Float32Array(count * 3);
+    const radius = new Float32Array(count);
+    
+    const R = 120; // Радиус сферы вокруг модели
+
+    for (let i = 0; i < count; i++) {
+        // Случайная позиция на сфере
+        const θ = Math.random() * 2 * Math.PI;
+        const φ = Math.acos(2 * Math.random() - 1);
+        const r = R + (Math.random() - 0.5) * 40;
+        
+        pos[i * 3] = r * Math.sin(φ) * Math.cos(θ);
+        pos[i * 3 + 1] = r * Math.sin(φ) * Math.sin(θ);
+        pos[i * 3 + 2] = r * Math.cos(φ);
+        
+        // Случайная скорость
+        velocity[i * 3] = (Math.random() - 0.5) * 0.5;
+        velocity[i * 3 + 1] = (Math.random() - 0.5) * 0.5;
+        velocity[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
+        
+        radius[i] = r;
+        size[i] = 1.0 + Math.random() * 0.5;
+        digit[i] = Math.random() < 0.5 ? 0.0 : 1.0;
+    }
+    
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute("size", new THREE.BufferAttribute(size, 1));
+    geo.setAttribute("digit", new THREE.BufferAttribute(digit, 1));
+    geo.setAttribute("velocity", new THREE.BufferAttribute(velocity, 3));
+    geo.setAttribute("radius", new THREE.BufferAttribute(radius, 1));
+    
+    const sizeMult = DIGIT_SIZE_MULTIPLIER.toFixed(1);
+    const mat = new THREE.ShaderMaterial({
+        uniforms: {
+            texture0: { value: digitTexture0 },
+            texture1: { value: digitTexture1 },
+            bgColor0: { value: new THREE.Vector3(1.0, 1.0, 1.0) }, // Цвет для фоновых нулей
+            bgColor1: { value: new THREE.Vector3(42/255, 241/255, 107/255) } // Цвет для фоновых единиц
+        },
+        vertexShader: `
+            attribute float size;
+            attribute float digit;
+            varying float vDigit;
+            void main() {
+                vDigit = digit;
+                vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                gl_PointSize = size * ${sizeMult} * (300.0 / -mv.z);
+                gl_Position = projectionMatrix * mv;
+            }`,
+        fragmentShader: `
+            uniform sampler2D texture0;
+            uniform sampler2D texture1;
+            uniform vec3 bgColor0;
+            uniform vec3 bgColor1;
+            varying float vDigit;
+            void main() {
+                vec2 uv = gl_PointCoord;
+                vec4 texColor = vDigit < 0.5 ? texture2D(texture0, uv) : texture2D(texture1, uv);
+                if (texColor.a < 0.01) discard;
+                
+                // Выбираем цвет в зависимости от цифры
+                vec3 baseColor = vDigit < 0.5 ? bgColor0 : bgColor1;
+                
+                gl_FragColor = vec4(baseColor, texColor.a * 0.7);
+            }`,
+        transparent: true,
+        depthWrite: true,
+        blending: THREE.NormalBlending
+    });
+
+    const points = new THREE.Points(geo, mat);
+    points.userData.velocity = velocity;
+    points.userData.radius = radius;
+    return points;
+}
+
+
+function init() {
+    digitTexture0 = createTextTexture('0', 256);
+    digitTexture1 = createTextTexture('1', 256);
+    scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x050203, .012);
+
+    camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, .1, 2500);
+    camera.position.set(0, 0, 80);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(devicePixelRatio);
+    renderer.setSize(innerWidth, innerHeight);
+    document.getElementById("container").appendChild(renderer.domElement);
+
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.screenSpacePanning = false;
+    controls.minDistance = 20;
+    controls.maxDistance = 200;
+    controls.target.set(0, 0, 0);
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.5;
+
+    particles = makeParticles(PARTICLE_COUNT);
+    // Применяем настройки цветов, размеров и теней
+    particles.material.uniforms.color0.value = colorSettings.color0;
+    particles.material.uniforms.color1.value = colorSettings.color1;
+    particles.material.uniforms.size0.value = colorSettings.size0;
+    particles.material.uniforms.size1.value = colorSettings.size1;
+    particles.material.uniforms.shadowIntensity.value = colorSettings.shadowIntensity;
+    
+    scene.add(particles);
+    
+    // Создаем фоновые летающие частицы
+    backgroundParticles = createBackgroundParticles(BACKGROUND_PARTICLE_COUNT);
+    // Применяем настройки цветов для фоновых частиц
+    backgroundParticles.material.uniforms.bgColor0.value = colorSettings.bgColor0;
+    backgroundParticles.material.uniforms.bgColor1.value = colorSettings.bgColor1;
+    scene.add(backgroundParticles);
+    
+    // Делаем настройки доступными из консоли для изменения в реальном времени
+    window.updateColors = () => {
+        particles.material.uniforms.color0.value.copy(colorSettings.color0);
+        particles.material.uniforms.color1.value.copy(colorSettings.color1);
+        particles.material.uniforms.size0.value = colorSettings.size0;
+        particles.material.uniforms.size1.value = colorSettings.size1;
+        particles.material.uniforms.shadowIntensity.value = colorSettings.shadowIntensity;
+        
+        // Обновляем цвета фоновых частиц
+        if (backgroundParticles) {
+            backgroundParticles.material.uniforms.bgColor0.value.copy(colorSettings.bgColor0);
+            backgroundParticles.material.uniforms.bgColor1.value.copy(colorSettings.bgColor1);
+        }
+    };
+    window.colorSettings = colorSettings;
+
+    // Загружаем модель мозга
+    loadModelPattern('scene.gltf', PARTICLE_COUNT)
+        .then((brainPoints) => {
+            applyPattern(brainPoints);
+        })
+        .catch((error) => {
+            console.error('Ошибка загрузки модели:', error);
+        });
+
+    addEventListener("resize", () => {
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+    });
+}
+
+// Применяет точки модели к частицам
+// Цифры 0 и 1 присваиваются детерминированно на основе позиции
+// Здесь устанавливаются ПОЗИЦИИ, ЦИФРЫ и SHADOW_FACTOR для эффекта теней
+function applyPattern(pts){
+    if (!pts || pts.length === 0) return;
+    const particleArr = particles.geometry.attributes.position.array;
+    const digitArr = particles.geometry.attributes.digit.array;
+    const shadowFactorArr = particles.geometry.attributes.shadowFactor.array;
+    
+    // Находим центр и границы модели для вычисления теней
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    let minZ = Infinity, maxZ = -Infinity;
+    
+    for(let j=0; j<PARTICLE_COUNT; j++){
+        const p = pts[j] || new THREE.Vector3();
+        minX = Math.min(minX, p.x);
+        maxX = Math.max(maxX, p.x);
+        minY = Math.min(minY, p.y);
+        maxY = Math.max(maxY, p.y);
+        minZ = Math.min(minZ, p.z);
+        maxZ = Math.max(maxZ, p.z);
+    }
+    
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const centerZ = (minZ + maxZ) / 2;
+    const maxDist = Math.sqrt(
+        (maxX - minX) ** 2 + 
+        (maxY - minY) ** 2 + 
+        (maxZ - minZ) ** 2
+    ) / 2;
+    
+    // Направление света под углом (немного наклонено)
+    // Нормализуем вектор для правильного направления
+    const lightDirection = new THREE.Vector3(0.3, -1, 0.2).normalize();
+    const heightRange = maxY - minY;
+    
+    // Предварительно вычисляем все позиции для проверки теней
+    const positions = [];
+    for(let j=0; j<PARTICLE_COUNT; j++){
+        const p = pts[j] || new THREE.Vector3();
+        positions.push(p);
+    }
+    
+    // Радиус для проверки соседних точек (для определения теней)
+    const shadowCheckRadius = maxDist * 0.15; // 15% от размера модели
+    
+    for(let j=0; j<PARTICLE_COUNT; j++){
+        const idx = j*3;
+        const p = pts[j] || new THREE.Vector3(); 
+        particleArr[idx] = p.x;      // Устанавливаем позицию X
+        particleArr[idx+1] = p.y;    // Устанавливаем позицию Y
+        particleArr[idx+2] = p.z;    // Устанавливаем позицию Z
+        
+        // Присваиваем цифру детерминированно на основе позиции
+        // Одна и та же позиция всегда получит одну и ту же цифру
+        digitArr[j] = hashPosition(p.x, p.y, p.z);
+        
+        // Вычисляем тень на основе пучка света под углом
+        // Проверяем, не находится ли точка в тени других точек в направлении света
+        
+        let shadowAmount = 0.0; // Количество затемнения (0 = нет тени, 1 = полная тень)
+        
+        // Проверяем соседние точки в направлении света
+        for(let k=0; k<PARTICLE_COUNT; k++){
+            if(k === j) continue;
+            
+            const otherP = positions[k];
+            const toOther = new THREE.Vector3().subVectors(otherP, p);
+            const dist = toOther.length();
+            
+            // Проверяем, находится ли другая точка в направлении света от текущей
+            if(dist < shadowCheckRadius * 1.5){
+                // Нормализуем вектор к другой точке
+                const toOtherNorm = toOther.clone().normalize();
+                
+                // Вычисляем, насколько направление к другой точке совпадает с направлением света
+                // Если совпадает (dot product близок к 1), значит точка в направлении света
+                const dotProduct = toOtherNorm.dot(lightDirection);
+                
+                // Если точка находится в направлении света (dotProduct > 0.3) и выше
+                // то текущая точка может быть в тени
+                if(dotProduct > 0.3 && otherP.y > p.y){
+                    // Чем ближе к направлению света и чем ближе точка, тем больше тень
+                    const heightDiff = otherP.y - p.y;
+                    const normalizedHeight = Math.min(heightDiff / heightRange, 1.0);
+                    const distanceFactor = 1.0 - (dist / (shadowCheckRadius * 1.5));
+                    const directionFactor = (dotProduct - 0.3) / 0.7; // Нормализуем от 0.3 до 1.0
+                    shadowAmount += normalizedHeight * distanceFactor * directionFactor * 0.25;
+                }
+            }
+        }
+        
+        // Нормализуем shadowAmount
+        shadowAmount = Math.min(shadowAmount, 1.0);
+        
+        // Базовое освещение на основе высоты (верхняя часть модели ярче)
+        const normalizedY = heightRange > 0 ? (p.y - minY) / heightRange : 0.5;
+        const baseLight = 0.3 + normalizedY * 0.7; // От 0.3 до 1.0
+        
+        // Применяем тень: чем больше shadowAmount, тем темнее
+        let shadowFactor = baseLight * (1.0 - shadowAmount * colorSettings.shadowIntensity);
+        
+        // Ограничиваем минимальную яркость
+        shadowFactor = Math.max(0.15, Math.min(1.0, shadowFactor));
+        
+        shadowFactorArr[j] = shadowFactor;
+    }
+    particles.geometry.attributes.position.needsUpdate = true;
+    particles.geometry.attributes.digit.needsUpdate = true;
+    particles.geometry.attributes.shadowFactor.needsUpdate = true;
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+
+    controls.update();
+
+    // Анимация фоновых частиц - плавное движение вокруг модели
+    if (backgroundParticles) {
+        const posArr = backgroundParticles.geometry.attributes.position.array;
+        const velArr = backgroundParticles.userData.velocity;
+        const radArr = backgroundParticles.userData.radius;
+        
+        for (let i = 0; i < BACKGROUND_PARTICLE_COUNT; i++) {
+            const i3 = i * 3;
+            // Обновляем позицию
+            posArr[i3] += velArr[i3] * dt * 10;
+            posArr[i3 + 1] += velArr[i3 + 1] * dt * 10;
+            posArr[i3 + 2] += velArr[i3 + 2] * dt * 10;
+            
+            // Удерживаем частицы в пределах сферы
+            const dist = Math.sqrt(posArr[i3]**2 + posArr[i3+1]**2 + posArr[i3+2]**2);
+            const maxDist = radArr[i] * 1.3;
+            if (dist > maxDist || dist < radArr[i] * 0.7) {
+                const scale = (dist > maxDist ? radArr[i] * 0.7 : maxDist) / dist;
+                posArr[i3] *= scale;
+                posArr[i3 + 1] *= scale;
+                posArr[i3 + 2] *= scale;
+            }
+        }
+        backgroundParticles.geometry.attributes.position.needsUpdate = true;
+    }
+
+    renderer.render(scene, camera);
+}
+
+init();
+animate();
+</script>
