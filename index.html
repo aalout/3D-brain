@@ -80,6 +80,13 @@ const PARTICLE_COUNT = 2605;
 const BACKGROUND_PARTICLE_COUNT = 5000; // Летающие частицы вокруг модели
 const DIGIT_SIZE_MULTIPLIER = 3; // Множитель размера цифр
 
+// Поворот модели (в радианах)
+const MODEL_ROTATION = {
+    x: 0, // Поворот вокруг оси X (180 градусов)
+    y: 0,       // Поворот вокруг оси Y
+    z: 0        // Поворот вокруг оси Z
+};
+
 const colorSettings = {
     color0: new THREE.Vector3(1.0, 1.0, 1.0), // Цвет для нулей (белый) RGB 0-1
     color1: new THREE.Vector3(42/255, 241/255, 107/255), // Цвет для единиц rgb(42, 241, 107) RGB 0-1
@@ -143,8 +150,8 @@ async function loadModelPattern(modelPath, targetCount) {
                     console.log(`✅ Достаточно вершин для ${targetCount} частиц`);
                 }
                 
-                // Если точек больше чем нужно, выбираем случайные
-                // Если меньше - дублируем случайные
+                // Равномерный выбор вершин для сохранения формы
+                // Вместо случайного - используем равномерное распределение
                 const result = [];
                 if (points.length === 0) {
                     reject(new Error('Модель не содержит вершин'));
@@ -152,16 +159,21 @@ async function loadModelPattern(modelPath, targetCount) {
                 }
                 
                 if (points.length >= targetCount) {
-                    // Выбираем случайные точки
-                    const indices = new Set();
-                    while (indices.size < targetCount) {
-                        indices.add(Math.floor(Math.random() * points.length));
-                    }
-                    indices.forEach(idx => result.push(points[idx].clone()));
-                } else {
-                    // Дублируем точки до нужного количества
+                    // Равномерный выбор: берем каждую N-ю вершину
+                    // Это сохраняет форму лучше, чем случайный выбор
+                    const step = points.length / targetCount;
                     for (let i = 0; i < targetCount; i++) {
-                        result.push(points[i % points.length].clone());
+                        const idx = Math.floor(i * step);
+                        result.push(points[idx].clone());
+                    }
+                } else {
+                    // Если вершин меньше - используем все и дополняем равномерно
+                    result.push(...points.map(p => p.clone()));
+                    
+                    // Дополняем равномерным распределением существующих вершин
+                    while (result.length < targetCount) {
+                        const idx = result.length % points.length;
+                        result.push(points[idx].clone());
                     }
                 }
                 
@@ -428,7 +440,7 @@ function init() {
     window.colorSettings = colorSettings;
 
     // Загружаем модель мозга
-    loadModelPattern('scene.gltf', PARTICLE_COUNT)
+    loadModelPattern('assets/brain1/scene.gltf', PARTICLE_COUNT)
         .then((brainPoints) => {
             applyPattern(brainPoints);
         })
@@ -452,13 +464,25 @@ function applyPattern(pts){
     const digitArr = particles.geometry.attributes.digit.array;
     const shadowFactorArr = particles.geometry.attributes.shadowFactor.array;
     
-    // Находим центр и границы модели для вычисления теней
+    // Создаем матрицу поворота
+    const rotationMatrix = new THREE.Matrix4();
+    rotationMatrix.makeRotationFromEuler(new THREE.Euler(MODEL_ROTATION.x, MODEL_ROTATION.y, MODEL_ROTATION.z, 'XYZ'));
+    
+    // Применяем поворот к точкам
+    const rotatedPts = pts.map(p => {
+        if(!p) return p;
+        const rotated = p.clone().applyMatrix4(rotationMatrix);
+        return rotated;
+    });
+    
+    // Находим границы модели
     let minX = Infinity, maxX = -Infinity;
     let minY = Infinity, maxY = -Infinity;
     let minZ = Infinity, maxZ = -Infinity;
     
     for(let j=0; j<PARTICLE_COUNT; j++){
-        const p = pts[j] || new THREE.Vector3();
+        const p = rotatedPts[j];
+        if(!p) continue;
         minX = Math.min(minX, p.x);
         maxX = Math.max(maxX, p.x);
         minY = Math.min(minY, p.y);
@@ -467,91 +491,117 @@ function applyPattern(pts){
         maxZ = Math.max(maxZ, p.z);
     }
     
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
-    const centerZ = (minZ + maxZ) / 2;
-    const maxDist = Math.sqrt(
-        (maxX - minX) ** 2 + 
-        (maxY - minY) ** 2 + 
-        (maxZ - minZ) ** 2
-    ) / 2;
-    
-    // Направление света под углом (немного наклонено)
-    // Нормализуем вектор для правильного направления
-    const lightDirection = new THREE.Vector3(0.3, -1, 0.2).normalize();
     const heightRange = maxY - minY;
+    const lightDirection = new THREE.Vector3(0.3, -1, 0.2).normalize();
     
-    // Предварительно вычисляем все позиции для проверки теней
-    const positions = [];
+    // Пространственная сетка для быстрого поиска соседей (O(n) вместо O(n²))
+    const gridSize = Math.ceil(Math.pow(PARTICLE_COUNT, 1/3) * 0.5); // Оптимальный размер сетки
+    const cellSize = Math.max(
+        (maxX - minX) / gridSize,
+        (maxY - minY) / gridSize,
+        (maxZ - minZ) / gridSize,
+        0.001
+    );
+    const grid = new Map();
+    
+    // Заполняем сетку индексами точек
     for(let j=0; j<PARTICLE_COUNT; j++){
-        const p = pts[j] || new THREE.Vector3();
-        positions.push(p);
+        const p = rotatedPts[j];
+        if(!p) continue;
+        const gx = Math.floor((p.x - minX) / cellSize);
+        const gy = Math.floor((p.y - minY) / cellSize);
+        const gz = Math.floor((p.z - minZ) / cellSize);
+        const key = `${gx},${gy},${gz}`;
+        if(!grid.has(key)) grid.set(key, []);
+        grid.get(key).push(j);
     }
     
-    // Радиус для проверки соседних точек (для определения теней)
-    const shadowCheckRadius = maxDist * 0.15; // 15% от размера модели
+    const shadowCheckRadius = cellSize * 2.5; // Радиус проверки теней
+    const shadowCheckRadiusSq = shadowCheckRadius * shadowCheckRadius;
     
+    // Функция для получения соседних ячеек
+    const getNeighborCells = (gx, gy, gz) => {
+        const neighbors = [];
+        for(let dx = -1; dx <= 1; dx++){
+            for(let dy = -1; dy <= 1; dy++){
+                for(let dz = -1; dz <= 1; dz++){
+                    neighbors.push(`${gx+dx},${gy+dy},${gz+dz}`);
+                }
+            }
+        }
+        return neighbors;
+    };
+    
+    // Обрабатываем все точки
     for(let j=0; j<PARTICLE_COUNT; j++){
         const idx = j*3;
-        const p = pts[j] || new THREE.Vector3(); 
-        particleArr[idx] = p.x;      // Устанавливаем позицию X
-        particleArr[idx+1] = p.y;    // Устанавливаем позицию Y
-        particleArr[idx+2] = p.z;    // Устанавливаем позицию Z
+        const p = rotatedPts[j];
+        if(!p) continue;
         
-        // Присваиваем цифру детерминированно на основе позиции
-        // Одна и та же позиция всегда получит одну и ту же цифру
+        particleArr[idx] = p.x;
+        particleArr[idx+1] = p.y;
+        particleArr[idx+2] = p.z;
+        
         digitArr[j] = hashPosition(p.x, p.y, p.z);
         
-        // Вычисляем тень на основе пучка света под углом
-        // Проверяем, не находится ли точка в тени других точек в направлении света
+        // Быстрое вычисление теней через пространственную сетку
+        let shadowAmount = 0.0;
+        const gx = Math.floor((p.x - minX) / cellSize);
+        const gy = Math.floor((p.y - minY) / cellSize);
+        const gz = Math.floor((p.z - minZ) / cellSize);
         
-        let shadowAmount = 0.0; // Количество затемнения (0 = нет тени, 1 = полная тень)
+        // Проверяем только соседние ячейки
+        const neighborKeys = getNeighborCells(gx, gy, gz);
+        let checkedCount = 0;
+        const maxChecks = 50; // Ограничиваем количество проверок для производительности
         
-        // Проверяем соседние точки в направлении света
-        for(let k=0; k<PARTICLE_COUNT; k++){
-            if(k === j) continue;
+        for(const key of neighborKeys){
+            const cellPoints = grid.get(key);
+            if(!cellPoints) continue;
             
-            const otherP = positions[k];
-            const toOther = new THREE.Vector3().subVectors(otherP, p);
-            const dist = toOther.length();
-            
-            // Проверяем, находится ли другая точка в направлении света от текущей
-            if(dist < shadowCheckRadius * 1.5){
-                // Нормализуем вектор к другой точке
-                const toOtherNorm = toOther.clone().normalize();
+            for(const k of cellPoints){
+                if(k === j || checkedCount >= maxChecks) continue;
+                checkedCount++;
                 
-                // Вычисляем, насколько направление к другой точке совпадает с направлением света
-                // Если совпадает (dot product близок к 1), значит точка в направлении света
-                const dotProduct = toOtherNorm.dot(lightDirection);
+                const otherP = rotatedPts[k];
+                if(!otherP) continue;
                 
-                // Если точка находится в направлении света (dotProduct > 0.3) и выше
-                // то текущая точка может быть в тени
-                if(dotProduct > 0.3 && otherP.y > p.y){
-                    // Чем ближе к направлению света и чем ближе точка, тем больше тень
-                    const heightDiff = otherP.y - p.y;
-                    const normalizedHeight = Math.min(heightDiff / heightRange, 1.0);
-                    const distanceFactor = 1.0 - (dist / (shadowCheckRadius * 1.5));
-                    const directionFactor = (dotProduct - 0.3) / 0.7; // Нормализуем от 0.3 до 1.0
-                    shadowAmount += normalizedHeight * distanceFactor * directionFactor * 0.25;
+                // Быстрая проверка расстояния (без sqrt)
+                const dx = otherP.x - p.x;
+                const dy = otherP.y - p.y;
+                const dz = otherP.z - p.z;
+                const distSq = dx*dx + dy*dy + dz*dz;
+                
+                if(distSq < shadowCheckRadiusSq && distSq > 0.0001){
+                    const dist = Math.sqrt(distSq);
+                    const invDist = 1.0 / dist;
+                    
+                    // Быстрое вычисление dot product без создания Vector3
+                    const dotProduct = (dx * lightDirection.x + dy * lightDirection.y + dz * lightDirection.z) * invDist;
+                    
+                    if(dotProduct > 0.3 && otherP.y > p.y){
+                        const heightDiff = otherP.y - p.y;
+                        const normalizedHeight = Math.min(heightDiff / heightRange, 1.0);
+                        const distanceFactor = 1.0 - (dist / shadowCheckRadius);
+                        const directionFactor = (dotProduct - 0.3) / 0.7;
+                        shadowAmount += normalizedHeight * distanceFactor * directionFactor * 0.2;
+                    }
                 }
             }
         }
         
-        // Нормализуем shadowAmount
         shadowAmount = Math.min(shadowAmount, 1.0);
         
-        // Базовое освещение на основе высоты (верхняя часть модели ярче)
+        // Базовое освещение на основе высоты
         const normalizedY = heightRange > 0 ? (p.y - minY) / heightRange : 0.5;
-        const baseLight = 0.3 + normalizedY * 0.7; // От 0.3 до 1.0
+        const baseLight = 0.3 + normalizedY * 0.7;
         
-        // Применяем тень: чем больше shadowAmount, тем темнее
         let shadowFactor = baseLight * (1.0 - shadowAmount * colorSettings.shadowIntensity);
-        
-        // Ограничиваем минимальную яркость
         shadowFactor = Math.max(0.15, Math.min(1.0, shadowFactor));
         
         shadowFactorArr[j] = shadowFactor;
     }
+    
     particles.geometry.attributes.position.needsUpdate = true;
     particles.geometry.attributes.digit.needsUpdate = true;
     particles.geometry.attributes.shadowFactor.needsUpdate = true;
