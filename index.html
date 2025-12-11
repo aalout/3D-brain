@@ -76,15 +76,15 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-const PARTICLE_COUNT = 2605;
+const PARTICLE_COUNT = 325340;
 const BACKGROUND_PARTICLE_COUNT = 5000; // Летающие частицы вокруг модели
-const DIGIT_SIZE_MULTIPLIER = 3; // Множитель размера цифр
+const DIGIT_SIZE_MULTIPLIER = 0.7; // Множитель размера цифр
 
 // Поворот модели (в радианах)
 const MODEL_ROTATION = {
-    x: 0, // Поворот вокруг оси X (180 градусов)
+    x: - (Math.PI / 2), // Поворот вокруг оси X (180 градусов)
     y: 0,       // Поворот вокруг оси Y
-    z: 0        // Поворот вокруг оси Z
+    z: Math.PI        // Поворот вокруг оси Z
 };
 
 const colorSettings = {
@@ -440,7 +440,7 @@ function init() {
     window.colorSettings = colorSettings;
 
     // Загружаем модель мозга
-    loadModelPattern('assets/brain1/scene.gltf', PARTICLE_COUNT)
+    loadModelPattern('assets/brain2/scene.gltf', PARTICLE_COUNT)
         .then((brainPoints) => {
             applyPattern(brainPoints);
         })
