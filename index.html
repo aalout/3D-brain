@@ -56,6 +56,109 @@
         box-shadow: 0 4px 20px rgba(0,0,0,.45);
     }
 
+    .performance-panel {
+        position: fixed;
+        right: 24px;
+        top: 24px;
+        padding: 16px 20px;
+        font-size: 11px;
+        font-family: 'Courier New', monospace;
+        pointer-events: none;
+        color: #d0b0ff;
+        background: rgba(18, 15, 40, 0.4);
+        border: 1px solid rgba(122, 70, 255, 0.28);
+        border-radius: 12px;
+        backdrop-filter: blur(12px);
+        z-index: 10;
+        box-shadow: 0 4px 20px rgba(0,0,0,.45);
+        min-width: 200px;
+        line-height: 1.6;
+    }
+
+    .performance-panel .metric {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 4px;
+    }
+
+    .performance-panel .metric-label {
+        color: #a0a0a0;
+    }
+
+    .performance-panel .metric-value {
+        color: #d0b0ff;
+        font-weight: 500;
+    }
+
+    .performance-panel .metric-value.good {
+        color: #2af16b;
+    }
+
+    .performance-panel .metric-value.warning {
+        color: #ffaa00;
+    }
+
+    .performance-panel .metric-value.bad {
+        color: #ff4444;
+    }
+
+    .performance-panel .separator {
+        height: 1px;
+        background: rgba(122, 70, 255, 0.2);
+        margin: 8px 0;
+    }
+
+    .performance-toggle {
+        position: fixed;
+        right: 24px;
+        top: 24px;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: rgba(18, 15, 40, 0.6);
+        border: 2px solid rgba(122, 70, 255, 0.5);
+        color: #d0b0ff;
+        font-size: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        z-index: 11;
+        backdrop-filter: blur(12px);
+        box-shadow: 0 4px 20px rgba(0,0,0,.45);
+        transition: all 0.3s ease;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .performance-toggle:hover {
+        background: rgba(18, 15, 40, 0.8);
+        border-color: rgba(122, 70, 255, 0.8);
+        transform: scale(1.1);
+    }
+
+    .performance-toggle:active {
+        transform: scale(0.95);
+    }
+
+    /* Показываем кнопку только на мобильных */
+    @media (min-width: 768px) {
+        .performance-toggle {
+            display: none;
+        }
+    }
+
+    /* На мобильных скрываем панель по умолчанию, показываем кнопку */
+    @media (max-width: 767px) {
+        .performance-panel {
+            right: 12px;
+            top: 80px;
+            font-size: 10px;
+            padding: 12px 16px;
+            min-width: 160px;
+        }
+    }
+
 </style>
 
 <script type="importmap">
@@ -70,6 +173,52 @@
 <div id="container"></div>
 <div class="vignette"></div>
 <div class="instructions">Drag to explore</div>
+<button class="performance-toggle" id="performanceToggle" aria-label="Toggle performance monitor">📊</button>
+<div class="performance-panel" id="performancePanel" style="display: none;">
+    <div class="metric">
+        <span class="metric-label">FPS:</span>
+        <span class="metric-value" id="fps">--</span>
+    </div>
+    <div class="metric">
+        <span class="metric-label">Frame Time:</span>
+        <span class="metric-value" id="frameTime">--</span>
+    </div>
+    <div class="separator"></div>
+    <div class="metric">
+        <span class="metric-label">Particles:</span>
+        <span class="metric-value" id="particleCount">--</span>
+    </div>
+    <div class="metric">
+        <span class="metric-label">Background:</span>
+        <span class="metric-value" id="bgParticleCount">--</span>
+    </div>
+    <div class="metric">
+        <span class="metric-label">Total:</span>
+        <span class="metric-value" id="totalParticles">--</span>
+    </div>
+    <div class="separator"></div>
+    <div class="metric">
+        <span class="metric-label">Draw Calls:</span>
+        <span class="metric-value" id="drawCalls">--</span>
+    </div>
+    <div class="metric">
+        <span class="metric-label">Triangles:</span>
+        <span class="metric-value" id="triangles">--</span>
+    </div>
+    <div class="metric">
+        <span class="metric-label">Points:</span>
+        <span class="metric-value" id="points">--</span>
+    </div>
+    <div class="separator"></div>
+    <div class="metric">
+        <span class="metric-label">Memory (MB):</span>
+        <span class="metric-value" id="memory">--</span>
+    </div>
+    <div class="metric">
+        <span class="metric-label">Status:</span>
+        <span class="metric-value" id="status">--</span>
+    </div>
+</div>
 
 <script type="module">
 import * as THREE from "three";
@@ -152,6 +301,289 @@ let scene, camera, renderer, controls;
 let particles, backgroundParticles;
 let clock = new THREE.Clock();
 let digitTexture0, digitTexture1;
+
+// ============================================================================
+// СИСТЕМА МОНИТОРИНГА ПРОИЗВОДИТЕЛЬНОСТИ
+// ============================================================================
+
+const PerformanceMonitor = {
+    enabled: false,
+    fps: 0,
+    frameTime: 0,
+    frameCount: 0,
+    lastTime: performance.now(),
+    fpsHistory: [],
+    maxHistoryLength: 60,
+    
+    init() {
+        const panel = document.getElementById('performancePanel');
+        const toggleBtn = document.getElementById('performanceToggle');
+        
+        // Функция переключения панели
+        const togglePanel = () => {
+            this.enabled = !this.enabled;
+            panel.style.display = this.enabled ? 'block' : 'none';
+            if (toggleBtn) {
+                toggleBtn.style.opacity = this.enabled ? '0.7' : '1';
+            }
+        };
+        
+        // Показываем панель при нажатии на P (десктоп)
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'p' || e.key === 'P') {
+                togglePanel();
+            }
+        });
+        
+        // Обработчик для кнопки (мобильные)
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                togglePanel();
+            });
+            
+            // Предотвращаем конфликт с OrbitControls
+            toggleBtn.addEventListener('touchstart', (e) => {
+                e.stopPropagation();
+            });
+        }
+        
+        // Определяем мобильное устройство
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+            || (window.innerWidth <= 768);
+        
+        // На мобильных показываем кнопку, на десктопе - только по нажатию P
+        if (isMobile && toggleBtn) {
+            toggleBtn.style.display = 'flex';
+        }
+        
+        // Показываем подсказку в консоли
+        console.log('%c📊 Performance Monitor', 'color: #2af16b; font-size: 14px; font-weight: bold;');
+        if (isMobile) {
+            console.log('Нажмите на кнопку 📊 в правом верхнем углу для показа/скрытия панели');
+        } else {
+            console.log('Нажмите P для показа/скрытия панели производительности');
+        }
+        console.log('Используйте PerformanceMonitor.getStats() для получения статистики');
+        console.log('Используйте PerformanceMonitor.getOptimizationTips() для рекомендаций');
+        console.log('Используйте PerformanceMonitor.printOptimizationTips() для вывода рекомендаций');
+        
+        // Выводим начальную оценку
+        setTimeout(() => {
+            this.printOptimizationTips();
+            this.printProductionReadiness();
+        }, 2000);
+    },
+    
+    update() {
+        if (!this.enabled) return;
+        
+        const now = performance.now();
+        const delta = now - this.lastTime;
+        this.frameCount++;
+        
+        if (delta >= 1000) {
+            this.fps = Math.round((this.frameCount * 1000) / delta);
+            this.frameTime = (delta / this.frameCount).toFixed(2);
+            
+            this.fpsHistory.push(this.fps);
+            if (this.fpsHistory.length > this.maxHistoryLength) {
+                this.fpsHistory.shift();
+            }
+            
+            this.frameCount = 0;
+            this.lastTime = now;
+            
+            this.updateUI();
+        }
+    },
+    
+    updateUI() {
+        const fpsEl = document.getElementById('fps');
+        const frameTimeEl = document.getElementById('frameTime');
+        const particleCountEl = document.getElementById('particleCount');
+        const bgParticleCountEl = document.getElementById('bgParticleCount');
+        const totalParticlesEl = document.getElementById('totalParticles');
+        const drawCallsEl = document.getElementById('drawCalls');
+        const trianglesEl = document.getElementById('triangles');
+        const pointsEl = document.getElementById('points');
+        const memoryEl = document.getElementById('memory');
+        const statusEl = document.getElementById('status');
+        
+        // FPS
+        fpsEl.textContent = this.fps;
+        fpsEl.className = 'metric-value ' + this.getFpsClass(this.fps);
+        
+        // Frame Time
+        frameTimeEl.textContent = this.frameTime + ' ms';
+        frameTimeEl.className = 'metric-value ' + this.getFrameTimeClass(parseFloat(this.frameTime));
+        
+        // Particle counts
+        if (particles) {
+            particleCountEl.textContent = CONFIG.particleCount.toLocaleString();
+            bgParticleCountEl.textContent = CONFIG.backgroundParticleCount.toLocaleString();
+            totalParticlesEl.textContent = (CONFIG.particleCount + CONFIG.backgroundParticleCount).toLocaleString();
+        }
+        
+        // Renderer info
+        if (renderer && renderer.info) {
+            const info = renderer.info;
+            drawCallsEl.textContent = info.render.calls || 'N/A';
+            trianglesEl.textContent = (info.render.triangles || 0).toLocaleString();
+            pointsEl.textContent = (info.render.points || 0).toLocaleString();
+        }
+        
+        // Memory (если доступно)
+        if (performance.memory) {
+            const memoryMB = (performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2);
+            memoryEl.textContent = memoryMB;
+        } else {
+            memoryEl.textContent = 'N/A';
+        }
+        
+        // Status
+        const status = this.getStatus();
+        statusEl.textContent = status.text;
+        statusEl.className = 'metric-value ' + status.class;
+    },
+    
+    getFpsClass(fps) {
+        if (fps >= 55) return 'good';
+        if (fps >= 30) return 'warning';
+        return 'bad';
+    },
+    
+    getFrameTimeClass(frameTime) {
+        if (frameTime <= 18) return 'good';  // ~60 FPS
+        if (frameTime <= 33) return 'warning'; // ~30 FPS
+        return 'bad';
+    },
+    
+    getStatus() {
+        const avgFps = this.fpsHistory.length > 0 
+            ? this.fpsHistory.reduce((a, b) => a + b, 0) / this.fpsHistory.length 
+            : this.fps;
+        
+        if (avgFps >= 55) {
+            return { text: 'Отлично', class: 'good' };
+        } else if (avgFps >= 30) {
+            return { text: 'Нормально', class: 'warning' };
+        } else {
+            return { text: 'Требует оптимизации', class: 'bad' };
+        }
+    },
+    
+    getStats() {
+        const avgFps = this.fpsHistory.length > 0 
+            ? this.fpsHistory.reduce((a, b) => a + b, 0) / this.fpsHistory.length 
+            : this.fps;
+        const minFps = this.fpsHistory.length > 0 ? Math.min(...this.fpsHistory) : this.fps;
+        const maxFps = this.fpsHistory.length > 0 ? Math.max(...this.fpsHistory) : this.fps;
+        
+        return {
+            currentFps: this.fps,
+            averageFps: Math.round(avgFps),
+            minFps,
+            maxFps,
+            frameTime: parseFloat(this.frameTime),
+            particleCount: CONFIG.particleCount,
+            backgroundParticleCount: CONFIG.backgroundParticleCount,
+            totalParticles: CONFIG.particleCount + CONFIG.backgroundParticleCount
+        };
+    },
+    
+    getOptimizationTips() {
+        const stats = this.getStats();
+        const tips = [];
+        
+        if (stats.averageFps < 30) {
+            tips.push('⚠️ Низкий FPS. Рекомендации:');
+            tips.push('  • Уменьшите CONFIG.particleCount (текущее: ' + CONFIG.particleCount + ')');
+            tips.push('  • Уменьшите CONFIG.backgroundParticleCount (текущее: ' + CONFIG.backgroundParticleCount + ')');
+            tips.push('  • Уменьшите CONFIG.digitSizeMultiplier для меньших частиц');
+            tips.push('  • Отключите antialiasing в renderer');
+        }
+        
+        if (stats.totalParticles > 50000) {
+            tips.push('⚠️ Большое количество частиц: ' + stats.totalParticles);
+            tips.push('  • Рассмотрите LOD (Level of Detail) систему');
+            tips.push('  • Используйте frustum culling');
+        }
+        
+        if (renderer && renderer.info && renderer.info.render.calls > 10) {
+            tips.push('⚠️ Много draw calls: ' + renderer.info.render.calls);
+            tips.push('  • Объедините геометрии где возможно');
+        }
+        
+        if (tips.length === 0) {
+            tips.push('✅ Производительность в норме!');
+        }
+        
+        return tips;
+    },
+    
+    printOptimizationTips() {
+        const tips = this.getOptimizationTips();
+        console.log('%c💡 Рекомендации по оптимизации:', 'color: #ffaa00; font-size: 12px; font-weight: bold;');
+        tips.forEach(tip => console.log(tip));
+    },
+    
+    printProductionReadiness() {
+        const stats = this.getStats();
+        const issues = [];
+        const warnings = [];
+        
+        // Проверяем FPS
+        if (stats.averageFps < 30) {
+            issues.push('FPS ниже 30 (' + stats.averageFps + ')');
+        } else if (stats.averageFps < 55) {
+            warnings.push('FPS ниже 55 (' + stats.averageFps + ')');
+        }
+        
+        // Проверяем количество частиц
+        if (stats.totalParticles > 100000) {
+            issues.push('Слишком много частиц: ' + stats.totalParticles);
+        } else if (stats.totalParticles > 50000) {
+            warnings.push('Много частиц: ' + stats.totalParticles + ' (может быть тяжело на слабых устройствах)');
+        }
+        
+        // Проверяем frame time
+        if (stats.frameTime > 33) {
+            issues.push('Frame time слишком высокий: ' + stats.frameTime + 'ms');
+        } else if (stats.frameTime > 18) {
+            warnings.push('Frame time выше оптимального: ' + stats.frameTime + 'ms');
+        }
+        
+        console.log('%c🚀 Оценка готовности к продакшену:', 'color: #2af16b; font-size: 12px; font-weight: bold;');
+        
+        if (issues.length === 0 && warnings.length === 0) {
+            console.log('%c✅ Готово к продакшену!', 'color: #2af16b; font-weight: bold;');
+            console.log('  • FPS: ' + stats.averageFps + ' (отлично)');
+            console.log('  • Частиц: ' + stats.totalParticles);
+            console.log('  • Frame time: ' + stats.frameTime + 'ms');
+        } else {
+            if (issues.length > 0) {
+                console.log('%c❌ Критические проблемы:', 'color: #ff4444; font-weight: bold;');
+                issues.forEach(issue => console.log('  • ' + issue));
+            }
+            if (warnings.length > 0) {
+                console.log('%c⚠️ Предупреждения:', 'color: #ffaa00; font-weight: bold;');
+                warnings.forEach(warning => console.log('  • ' + warning));
+            }
+            console.log('%c💡 Используйте PerformanceMonitor.getOptimizationTips() для рекомендаций', 'color: #d0b0ff;');
+        }
+        
+        return {
+            ready: issues.length === 0,
+            issues,
+            warnings,
+            stats
+        };
+    }
+};
+
+// Экспортируем для доступа из консоли
+window.PerformanceMonitor = PerformanceMonitor;
 
 function normalise(points, size) {
     if (points.length === 0) return [];
@@ -468,6 +900,7 @@ function init() {
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(devicePixelRatio);
     renderer.setSize(innerWidth, innerHeight);
+    renderer.info.autoReset = false; // Отключаем автосброс для мониторинга
     document.getElementById("container").appendChild(renderer.domElement);
 
     controls = new OrbitControls(camera, renderer.domElement);
@@ -556,6 +989,9 @@ function init() {
         camera.updateProjectionMatrix();
         renderer.setSize(innerWidth, innerHeight);
     });
+    
+    // Инициализируем мониторинг производительности
+    PerformanceMonitor.init();
 }
 
 // Применяет точки модели к частицам
@@ -647,6 +1083,11 @@ function applyPattern(pts, normals){
 function animate() {
     requestAnimationFrame(animate);
     const dt = clock.getDelta();
+    
+    // Сбрасываем статистику рендерера для нового кадра
+    if (renderer && renderer.info) {
+        renderer.info.reset();
+    }
 
     controls.update();
 
@@ -677,6 +1118,9 @@ function animate() {
     }
 
     renderer.render(scene, camera);
+    
+    // Обновляем мониторинг производительности
+    PerformanceMonitor.update();
 }
 
 init();
