@@ -94,7 +94,7 @@ const colorSettings = {
     bgColor1: new THREE.Vector3(42/255, 241/255, 107/255), // Цвет для фоновых единиц rgb(42, 241, 107) RGB 0-1
     size0: 1.0, // Размер нулей
     size1: 1.0, // Размер единиц
-    shadowIntensity: 0.8 // Интенсивность теней (0.0 - нет теней, 1.0 - максимальные тени)
+    shadowIntensity: 0.95 // Интенсивность теней (0.0 - нет теней, 1.0 - максимальные тени)
 };
 
 let scene, camera, renderer, controls;
@@ -110,7 +110,7 @@ function normalise(points, size) {
     return points.map(p => p.clone().sub(centre).multiplyScalar(size / maxDim));
 }
 
-// Функция для извлечения вершин из 3D модели
+// Функция для извлечения вершин и нормалей из 3D модели
 async function loadModelPattern(modelPath, targetCount) {
     return new Promise((resolve, reject) => {
         const loader = new GLTFLoader();
@@ -118,22 +118,33 @@ async function loadModelPattern(modelPath, targetCount) {
             modelPath,
             (gltf) => {
                 const points = [];
+                const normals = [];
                 
                 // Рекурсивно обходим все меши в модели
                 gltf.scene.traverse((child) => {
                     if (child.isMesh) {
                         const geometry = child.geometry;
                         const positionAttribute = geometry.attributes.position;
+                        const normalAttribute = geometry.attributes.normal;
                         
                         // Получаем мировую матрицу для правильного позиционирования
                         child.updateMatrixWorld();
                         const worldMatrix = child.matrixWorld;
+                        const normalMatrix = new THREE.Matrix3().getNormalMatrix(worldMatrix);
                         
-                        // Извлекаем все вершины
+                        // Извлекаем все вершины и нормали
                         for (let i = 0; i < positionAttribute.count; i++) {
                             const vertex = new THREE.Vector3().fromBufferAttribute(positionAttribute, i);
                             vertex.applyMatrix4(worldMatrix);
                             points.push(vertex);
+                            
+                            if (normalAttribute) {
+                                const normal = new THREE.Vector3().fromBufferAttribute(normalAttribute, i);
+                                normal.applyMatrix3(normalMatrix).normalize();
+                                normals.push(normal);
+                            } else {
+                                normals.push(new THREE.Vector3(0, 1, 0));
+                            }
                         }
                     }
                 });
@@ -151,34 +162,35 @@ async function loadModelPattern(modelPath, targetCount) {
                 }
                 
                 // Равномерный выбор вершин для сохранения формы
-                // Вместо случайного - используем равномерное распределение
-                const result = [];
+                const resultPoints = [];
+                const resultNormals = [];
                 if (points.length === 0) {
                     reject(new Error('Модель не содержит вершин'));
                     return;
                 }
                 
                 if (points.length >= targetCount) {
-                    // Равномерный выбор: берем каждую N-ю вершину
-                    // Это сохраняет форму лучше, чем случайный выбор
                     const step = points.length / targetCount;
                     for (let i = 0; i < targetCount; i++) {
                         const idx = Math.floor(i * step);
-                        result.push(points[idx].clone());
+                        resultPoints.push(points[idx].clone());
+                        resultNormals.push(normals[idx].clone());
                     }
                 } else {
-                    // Если вершин меньше - используем все и дополняем равномерно
-                    result.push(...points.map(p => p.clone()));
+                    resultPoints.push(...points.map(p => p.clone()));
+                    resultNormals.push(...normals.map(n => n.clone()));
                     
-                    // Дополняем равномерным распределением существующих вершин
-                    while (result.length < targetCount) {
-                        const idx = result.length % points.length;
-                        result.push(points[idx].clone());
+                    while (resultPoints.length < targetCount) {
+                        const idx = resultPoints.length % points.length;
+                        resultPoints.push(points[idx].clone());
+                        resultNormals.push(normals[idx].clone());
                     }
                 }
                 
-                // Нормализуем и возвращаем
-                resolve(normalise(result, 50));
+                // Нормализуем позиции
+                const normalizedPoints = normalise(resultPoints, 50);
+                
+                resolve({ points: normalizedPoints, normals: resultNormals });
             },
             undefined,
             (error) => {
@@ -284,13 +296,11 @@ function makeParticles(count) {
                 // Выбираем цвет в зависимости от цифры
                 vec3 baseColor = vDigit < 0.5 ? color0 : color1;
                 
-                // Применяем тени через затемнение цвета (не opacity!)
-                // vShadowFactor: 1.0 = полный свет, 0.0 = полная тень
-                // Используем более выраженное затемнение для лучших теней
-                float shadowDarkness = 1.0 - (1.0 - vShadowFactor) * shadowIntensity;
-                vec3 shadowedColor = baseColor * shadowDarkness;
+                // Тени через opacity - в тенях цифры становятся прозрачнее
+                // vShadowFactor: 1.0 = полный свет (полная opacity), 0.0 = полная тень (минимальная opacity)
+                float finalOpacity = texColor.a * vShadowFactor;
                 
-                gl_FragColor = vec4(shadowedColor, texColor.a);
+                gl_FragColor = vec4(baseColor, finalOpacity);
             }`,
         transparent: true,
         depthWrite: true,
@@ -441,8 +451,8 @@ function init() {
 
     // Загружаем модель мозга
     loadModelPattern('assets/brain6/scene.gltf', PARTICLE_COUNT)
-        .then((brainPoints) => {
-            applyPattern(brainPoints);
+        .then((data) => {
+            applyPattern(data.points, data.normals);
         })
         .catch((error) => {
             console.error('Ошибка загрузки модели:', error);
@@ -456,148 +466,64 @@ function init() {
 }
 
 // Применяет точки модели к частицам
-// Цифры 0 и 1 присваиваются детерминированно на основе позиции
-// Здесь устанавливаются ПОЗИЦИИ, ЦИФРЫ и SHADOW_FACTOR для эффекта теней
-function applyPattern(pts){
+// Использует нормали из модели для реалистичного освещения извилин
+function applyPattern(pts, normals){
     if (!pts || pts.length === 0) return;
     const particleArr = particles.geometry.attributes.position.array;
     const digitArr = particles.geometry.attributes.digit.array;
     const shadowFactorArr = particles.geometry.attributes.shadowFactor.array;
     
-    // Создаем матрицу поворота
+    // Создаем матрицы поворота
     const rotationMatrix = new THREE.Matrix4();
     rotationMatrix.makeRotationFromEuler(new THREE.Euler(MODEL_ROTATION.x, MODEL_ROTATION.y, MODEL_ROTATION.z, 'XYZ'));
+    const normalRotationMatrix = new THREE.Matrix3().getNormalMatrix(rotationMatrix);
     
-    // Применяем поворот к точкам
-    const rotatedPts = pts.map(p => {
-        if(!p) return p;
-        const rotated = p.clone().applyMatrix4(rotationMatrix);
-        return rotated;
-    });
-    
-    // Находим границы модели
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-    let minZ = Infinity, maxZ = -Infinity;
-    
-    for(let j=0; j<PARTICLE_COUNT; j++){
-        const p = rotatedPts[j];
-        if(!p) continue;
-        minX = Math.min(minX, p.x);
-        maxX = Math.max(maxX, p.x);
-        minY = Math.min(minY, p.y);
-        maxY = Math.max(maxY, p.y);
-        minZ = Math.min(minZ, p.z);
-        maxZ = Math.max(maxZ, p.z);
-    }
-    
-    const heightRange = maxY - minY;
-    const lightDirection = new THREE.Vector3(0.3, -1, 0.2).normalize();
-    
-    // Пространственная сетка для быстрого поиска соседей (O(n) вместо O(n²))
-    const gridSize = Math.ceil(Math.pow(PARTICLE_COUNT, 1/3) * 0.5); // Оптимальный размер сетки
-    const cellSize = Math.max(
-        (maxX - minX) / gridSize,
-        (maxY - minY) / gridSize,
-        (maxZ - minZ) / gridSize,
-        0.001
-    );
-    const grid = new Map();
-    
-    // Заполняем сетку индексами точек
-    for(let j=0; j<PARTICLE_COUNT; j++){
-        const p = rotatedPts[j];
-        if(!p) continue;
-        const gx = Math.floor((p.x - minX) / cellSize);
-        const gy = Math.floor((p.y - minY) / cellSize);
-        const gz = Math.floor((p.z - minZ) / cellSize);
-        const key = `${gx},${gy},${gz}`;
-        if(!grid.has(key)) grid.set(key, []);
-        grid.get(key).push(j);
-    }
-    
-    const shadowCheckRadius = cellSize * 2.5; // Радиус проверки теней
-    const shadowCheckRadiusSq = shadowCheckRadius * shadowCheckRadius;
-    
-    // Функция для получения соседних ячеек
-    const getNeighborCells = (gx, gy, gz) => {
-        const neighbors = [];
-        for(let dx = -1; dx <= 1; dx++){
-            for(let dy = -1; dy <= 1; dy++){
-                for(let dz = -1; dz <= 1; dz++){
-                    neighbors.push(`${gx+dx},${gy+dy},${gz+dz}`);
-                }
-            }
+    // Применяем поворот к точкам и нормалям
+    const rotatedPts = [];
+    const rotatedNormals = [];
+    for (let i = 0; i < pts.length; i++) {
+        const p = pts[i];
+        const n = normals[i];
+        if (!p) {
+            rotatedPts.push(null);
+            rotatedNormals.push(null);
+            continue;
         }
-        return neighbors;
-    };
+        rotatedPts.push(p.clone().applyMatrix4(rotationMatrix));
+        rotatedNormals.push(n ? n.clone().applyMatrix3(normalRotationMatrix).normalize() : new THREE.Vector3(0, 1, 0));
+    }
+    
+    // Направление света (сверху-спереди-слева)
+    const lightDir = new THREE.Vector3(0.3, 1.0, 0.5).normalize();
     
     // Обрабатываем все точки
-    for(let j=0; j<PARTICLE_COUNT; j++){
-        const idx = j*3;
+    for (let j = 0; j < PARTICLE_COUNT; j++) {
+        const idx = j * 3;
         const p = rotatedPts[j];
-        if(!p) continue;
+        const n = rotatedNormals[j];
+        if (!p) continue;
         
         particleArr[idx] = p.x;
-        particleArr[idx+1] = p.y;
-        particleArr[idx+2] = p.z;
+        particleArr[idx + 1] = p.y;
+        particleArr[idx + 2] = p.z;
         
         digitArr[j] = hashPosition(p.x, p.y, p.z);
         
-        // Быстрое вычисление теней через пространственную сетку
-        let shadowAmount = 0.0;
-        const gx = Math.floor((p.x - minX) / cellSize);
-        const gy = Math.floor((p.y - minY) / cellSize);
-        const gz = Math.floor((p.z - minZ) / cellSize);
+        // Освещение на основе нормалей (Lambertian)
+        // dot(normal, lightDir) даёт освещённость: 1 = полностью освещено, -1 = в тени
+        const NdotL = n.dot(lightDir);
         
-        // Проверяем только соседние ячейки
-        const neighborKeys = getNeighborCells(gx, gy, gz);
-        let checkedCount = 0;
-        const maxChecks = 50; // Ограничиваем количество проверок для производительности
+        // Преобразуем в диапазон [0, 1] с мягким переходом
+        // Используем half-lambert для более мягких теней
+        const halfLambert = NdotL * 0.5 + 0.5;
         
-        for(const key of neighborKeys){
-            const cellPoints = grid.get(key);
-            if(!cellPoints) continue;
-            
-            for(const k of cellPoints){
-                if(k === j || checkedCount >= maxChecks) continue;
-                checkedCount++;
-                
-                const otherP = rotatedPts[k];
-                if(!otherP) continue;
-                
-                // Быстрая проверка расстояния (без sqrt)
-                const dx = otherP.x - p.x;
-                const dy = otherP.y - p.y;
-                const dz = otherP.z - p.z;
-                const distSq = dx*dx + dy*dy + dz*dz;
-                
-                if(distSq < shadowCheckRadiusSq && distSq > 0.0001){
-                    const dist = Math.sqrt(distSq);
-                    const invDist = 1.0 / dist;
-                    
-                    // Быстрое вычисление dot product без создания Vector3
-                    const dotProduct = (dx * lightDirection.x + dy * lightDirection.y + dz * lightDirection.z) * invDist;
-                    
-                    if(dotProduct > 0.3 && otherP.y > p.y){
-                        const heightDiff = otherP.y - p.y;
-                        const normalizedHeight = Math.min(heightDiff / heightRange, 1.0);
-                        const distanceFactor = 1.0 - (dist / shadowCheckRadius);
-                        const directionFactor = (dotProduct - 0.3) / 0.7;
-                        shadowAmount += normalizedHeight * distanceFactor * directionFactor * 0.2;
-                    }
-                }
-            }
-        }
+        // Применяем интенсивность теней
+        // shadowIntensity контролирует контраст между светом и тенью
+        const ambient = 1.0 - colorSettings.shadowIntensity;
+        let shadowFactor = ambient + halfLambert * colorSettings.shadowIntensity;
         
-        shadowAmount = Math.min(shadowAmount, 1.0);
-        
-        // Базовое освещение на основе высоты
-        const normalizedY = heightRange > 0 ? (p.y - minY) / heightRange : 0.5;
-        const baseLight = 0.3 + normalizedY * 0.7;
-        
-        let shadowFactor = baseLight * (1.0 - shadowAmount * colorSettings.shadowIntensity);
-        shadowFactor = Math.max(0.15, Math.min(1.0, shadowFactor));
+        // Ограничиваем диапазон
+        shadowFactor = Math.max(0.05, Math.min(1.0, shadowFactor));
         
         shadowFactorArr[j] = shadowFactor;
     }
