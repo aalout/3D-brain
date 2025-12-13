@@ -76,9 +76,9 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-const PARTICLE_COUNT = 325340;
+const PARTICLE_COUNT = 39575;
 const BACKGROUND_PARTICLE_COUNT = 5000; // Летающие частицы вокруг модели
-const DIGIT_SIZE_MULTIPLIER = 0.7; // Множитель размера цифр
+const DIGIT_SIZE_MULTIPLIER = 1.2; // Множитель размера цифр
 
 // Поворот модели (в радианах)
 const MODEL_ROTATION = {
@@ -94,7 +94,7 @@ const colorSettings = {
     bgColor1: new THREE.Vector3(42/255, 241/255, 107/255), // Цвет для фоновых единиц rgb(42, 241, 107) RGB 0-1
     size0: 1.0, // Размер нулей
     size1: 1.0, // Размер единиц
-    shadowIntensity: 0.75 // Интенсивность теней (0.0 - нет теней, 1.0 - максимальные тени)
+    shadowIntensity: 0.8 // Интенсивность теней (0.0 - нет теней, 1.0 - максимальные тени)
 };
 
 let scene, camera, renderer, controls;
@@ -440,7 +440,7 @@ function init() {
     window.colorSettings = colorSettings;
 
     // Загружаем модель мозга
-    loadModelPattern('assets/brain2/scene.gltf', PARTICLE_COUNT)
+    loadModelPattern('assets/brain6/scene.gltf', PARTICLE_COUNT)
         .then((brainPoints) => {
             applyPattern(brainPoints);
         })
