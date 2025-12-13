@@ -76,25 +76,76 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-const PARTICLE_COUNT = 39575;
-const BACKGROUND_PARTICLE_COUNT = 5000; // Летающие частицы вокруг модели
-const DIGIT_SIZE_MULTIPLIER = 1.2; // Множитель размера цифр
+// ============================================================================
+// КОНФИГУРАЦИЯ
+// ============================================================================
 
-// Поворот модели (в радианах)
-const MODEL_ROTATION = {
-    x: - (Math.PI / 2), // Поворот вокруг оси X (180 градусов)
-    y: 0,       // Поворот вокруг оси Y
-    z: Math.PI        // Поворот вокруг оси Z
+// Количество частиц
+const CONFIG = {
+    particleCount: 39575,
+    backgroundParticleCount: 5000,
+    digitSizeMultiplier: 1.2,
+    
+    // Поворот модели (в радианах)
+    modelRotation: {
+        x: -(Math.PI / 2),
+        y: 0,
+        z: Math.PI
+    },
+    
+    // Цвета градиента (RGB 0-255, конвертируются в 0-1)
+    gradient: {
+        topColor: { r: 42, g: 241, b: 107 },      // Белый (верх)
+        bottomColor: { r: 255, g: 255, b: 255 },    // #2AF16B (низ)
+        intensity: 1.0,                             // Интенсивность градиента (0.0 - нет градиента, 1.0 - полный)
+        blendStart: 0.2,                            // Начало градиента (0.0 = верх, 1.0 = низ)
+        blendEnd: 1.0                              // Конец градиента (0.0 = верх, 1.0 = низ)
+    },
+    
+    // Цвета для фоновых частиц
+    backgroundColors: {
+        color0: { r: 255, g: 255, b: 255 },         // Цвет для фоновых нулей
+        color1: { r: 42, g: 241, b: 107 }          // Цвет для фоновых единиц
+    },
+    
+    // Размеры частиц
+    particleSizes: {
+        size0: 1.0,                                 // Размер нулей
+        size1: 1.0                                 // Размер единиц
+    },
+    
+    // Освещение и тени
+    lighting: {
+        shadowIntensity: 0.95,                      // Интенсивность теней (0.0 - нет теней, 1.0 - максимальные)
+        lightDirection: { x: 0.3, y: 1.0, z: 0.5 }  // Направление света (нормализуется автоматически)
+    }
 };
 
+// Преобразуем цвета в Vector3 для Three.js
 const colorSettings = {
-    color0: new THREE.Vector3(1.0, 1.0, 1.0), // Цвет для нулей (белый) RGB 0-1
-    color1: new THREE.Vector3(42/255, 241/255, 107/255), // Цвет для единиц rgb(42, 241, 107) RGB 0-1
-    bgColor0: new THREE.Vector3(1.0, 1.0, 1.0), // Цвет для фоновых нулей (белый) RGB 0-1
-    bgColor1: new THREE.Vector3(42/255, 241/255, 107/255), // Цвет для фоновых единиц rgb(42, 241, 107) RGB 0-1
-    size0: 1.0, // Размер нулей
-    size1: 1.0, // Размер единиц
-    shadowIntensity: 0.95 // Интенсивность теней (0.0 - нет теней, 1.0 - максимальные тени)
+    gradientTop: new THREE.Vector3(
+        CONFIG.gradient.topColor.r / 255,
+        CONFIG.gradient.topColor.g / 255,
+        CONFIG.gradient.topColor.b / 255
+    ),
+    gradientBottom: new THREE.Vector3(
+        CONFIG.gradient.bottomColor.r / 255,
+        CONFIG.gradient.bottomColor.g / 255,
+        CONFIG.gradient.bottomColor.b / 255
+    ),
+    bgColor0: new THREE.Vector3(
+        CONFIG.backgroundColors.color0.r / 255,
+        CONFIG.backgroundColors.color0.g / 255,
+        CONFIG.backgroundColors.color0.b / 255
+    ),
+    bgColor1: new THREE.Vector3(
+        CONFIG.backgroundColors.color1.r / 255,
+        CONFIG.backgroundColors.color1.g / 255,
+        CONFIG.backgroundColors.color1.b / 255
+    ),
+    size0: CONFIG.particleSizes.size0,
+    size1: CONFIG.particleSizes.size1,
+    shadowIntensity: CONFIG.lighting.shadowIntensity
 };
 
 let scene, camera, renderer, controls;
@@ -155,8 +206,8 @@ async function loadModelPattern(modelPath, targetCount) {
                 console.log(`🎯 Запрошено частиц: ${targetCount}`);
                 
                 if (uniqueVertexCount < targetCount) {
-                    console.warn(`⚠️ PARTICLE_COUNT (${targetCount}) больше количества вершин модели (${uniqueVertexCount}). Будут использованы дубликаты.`);
-                    console.log(`💡 Рекомендуется установить PARTICLE_COUNT <= ${uniqueVertexCount} для избежания дублирования`);
+                    console.warn(`⚠️ Количество частиц (${targetCount}) больше количества вершин модели (${uniqueVertexCount}). Будут использованы дубликаты.`);
+                    console.log(`💡 Рекомендуется установить CONFIG.particleCount <= ${uniqueVertexCount} для избежания дублирования`);
                 } else {
                     console.log(`✅ Достаточно вершин для ${targetCount} частиц`);
                 }
@@ -237,43 +288,49 @@ function makeParticles(count) {
     const size = new Float32Array(count);
     const digit = new Float32Array(count);
     const shadowFactor = new Float32Array(count);
+    const heightFactor = new Float32Array(count); // Нормализованная высота для градиента
     
     for (let i = 0; i < count; i++) {
-        size[i] = 2.0; // Увеличиваем размер для большего объема
-        // Цифра будет присвоена детерминированно на основе позиции в applyPattern
-        digit[i] = 0.0; // Временное значение, будет обновлено
-        shadowFactor[i] = 1.0; // Коэффициент затемнения (1.0 = без тени, 0.0 = полная тень)
+        size[i] = 2.0;
+        digit[i] = 0.0;
+        shadowFactor[i] = 1.0;
+        heightFactor[i] = 0.5; // Временное значение, будет обновлено в applyPattern
     }
     
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     geo.setAttribute("size", new THREE.BufferAttribute(size, 1));
     geo.setAttribute("digit", new THREE.BufferAttribute(digit, 1));
     geo.setAttribute("shadowFactor", new THREE.BufferAttribute(shadowFactor, 1));
+    geo.setAttribute("heightFactor", new THREE.BufferAttribute(heightFactor, 1));
     
-    const sizeMult = DIGIT_SIZE_MULTIPLIER.toFixed(1);
+    const sizeMult = CONFIG.digitSizeMultiplier.toFixed(1);
     const mat = new THREE.ShaderMaterial({
         uniforms: {
             texture0: { value: digitTexture0 },
             texture1: { value: digitTexture1 },
-            color0: { value: new THREE.Vector3(1.0, 1.0, 1.0) }, // Цвет для нулей (белый)
-            color1: { value: new THREE.Vector3(42/255, 241/255, 107/255) }, // Цвет для единиц rgb(42, 241, 107)
-            size0: { value: 2.0 }, // Размер нулей
-            size1: { value: 2.0 }, // Размер единиц
-            shadowIntensity: { value: 0.7 } // Интенсивность теней
+            gradientTop: { value: colorSettings.gradientTop },
+            gradientBottom: { value: colorSettings.gradientBottom },
+            gradientIntensity: { value: CONFIG.gradient.intensity },
+            gradientBlendStart: { value: CONFIG.gradient.blendStart },
+            gradientBlendEnd: { value: CONFIG.gradient.blendEnd },
+            size0: { value: colorSettings.size0 },
+            size1: { value: colorSettings.size1 },
+            shadowIntensity: { value: colorSettings.shadowIntensity }
         },
         vertexShader: `
             attribute float size;
             attribute float digit;
             attribute float shadowFactor;
+            attribute float heightFactor;
             uniform float size0;
             uniform float size1;
             varying float vDigit;
             varying float vShadowFactor;
-            varying vec3 vPosition;
+            varying float vHeightFactor;
             void main() {
                 vDigit = digit;
                 vShadowFactor = shadowFactor;
-                vPosition = position;
+                vHeightFactor = heightFactor;
                 vec4 mv = modelViewMatrix * vec4(position, 1.0);
                 float finalSize = vDigit < 0.5 ? size0 : size1;
                 gl_PointSize = finalSize * ${sizeMult} * (400.0 / -mv.z);
@@ -282,22 +339,29 @@ function makeParticles(count) {
         fragmentShader: `
             uniform sampler2D texture0;
             uniform sampler2D texture1;
-            uniform vec3 color0;
-            uniform vec3 color1;
+            uniform vec3 gradientTop;
+            uniform vec3 gradientBottom;
+            uniform float gradientIntensity;
+            uniform float gradientBlendStart;
+            uniform float gradientBlendEnd;
             uniform float shadowIntensity;
             varying float vDigit;
             varying float vShadowFactor;
-            varying vec3 vPosition;
+            varying float vHeightFactor;
             void main() {
                 vec2 uv = gl_PointCoord;
                 vec4 texColor = vDigit < 0.5 ? texture2D(texture0, uv) : texture2D(texture1, uv);
                 if (texColor.a < 0.01) discard;
                 
-                // Выбираем цвет в зависимости от цифры
-                vec3 baseColor = vDigit < 0.5 ? color0 : color1;
+                // Вычисляем градиент на основе высоты
+                // vHeightFactor: 0.0 = верх (белый), 1.0 = низ (#2AF16B)
+                float gradientT = clamp((vHeightFactor - gradientBlendStart) / (gradientBlendEnd - gradientBlendStart), 0.0, 1.0);
+                vec3 gradientColor = mix(gradientTop, gradientBottom, gradientT);
                 
-                // Тени через opacity - в тенях цифры становятся прозрачнее
-                // vShadowFactor: 1.0 = полный свет (полная opacity), 0.0 = полная тень (минимальная opacity)
+                // Применяем интенсивность градиента
+                vec3 baseColor = mix(gradientTop, gradientColor, gradientIntensity);
+                
+                // Тени через opacity
                 float finalOpacity = texColor.a * vShadowFactor;
                 
                 gl_FragColor = vec4(baseColor, finalOpacity);
@@ -346,13 +410,13 @@ function createBackgroundParticles(count) {
     geo.setAttribute("velocity", new THREE.BufferAttribute(velocity, 3));
     geo.setAttribute("radius", new THREE.BufferAttribute(radius, 1));
     
-    const sizeMult = DIGIT_SIZE_MULTIPLIER.toFixed(1);
+    const sizeMult = CONFIG.digitSizeMultiplier.toFixed(1);
     const mat = new THREE.ShaderMaterial({
         uniforms: {
             texture0: { value: digitTexture0 },
             texture1: { value: digitTexture1 },
-            bgColor0: { value: new THREE.Vector3(1.0, 1.0, 1.0) }, // Цвет для фоновых нулей
-            bgColor1: { value: new THREE.Vector3(42/255, 241/255, 107/255) } // Цвет для фоновых единиц
+            bgColor0: { value: colorSettings.bgColor0 },
+            bgColor1: { value: colorSettings.bgColor1 }
         },
         vertexShader: `
             attribute float size;
@@ -416,10 +480,13 @@ function init() {
     controls.autoRotate = true;
     controls.autoRotateSpeed = 0.5;
 
-    particles = makeParticles(PARTICLE_COUNT);
-    // Применяем настройки цветов, размеров и теней
-    particles.material.uniforms.color0.value = colorSettings.color0;
-    particles.material.uniforms.color1.value = colorSettings.color1;
+    particles = makeParticles(CONFIG.particleCount);
+    // Применяем настройки
+    particles.material.uniforms.gradientTop.value = colorSettings.gradientTop;
+    particles.material.uniforms.gradientBottom.value = colorSettings.gradientBottom;
+    particles.material.uniforms.gradientIntensity.value = CONFIG.gradient.intensity;
+    particles.material.uniforms.gradientBlendStart.value = CONFIG.gradient.blendStart;
+    particles.material.uniforms.gradientBlendEnd.value = CONFIG.gradient.blendEnd;
     particles.material.uniforms.size0.value = colorSettings.size0;
     particles.material.uniforms.size1.value = colorSettings.size1;
     particles.material.uniforms.shadowIntensity.value = colorSettings.shadowIntensity;
@@ -427,30 +494,56 @@ function init() {
     scene.add(particles);
     
     // Создаем фоновые летающие частицы
-    backgroundParticles = createBackgroundParticles(BACKGROUND_PARTICLE_COUNT);
-    // Применяем настройки цветов для фоновых частиц
+    backgroundParticles = createBackgroundParticles(CONFIG.backgroundParticleCount);
     backgroundParticles.material.uniforms.bgColor0.value = colorSettings.bgColor0;
     backgroundParticles.material.uniforms.bgColor1.value = colorSettings.bgColor1;
     scene.add(backgroundParticles);
     
     // Делаем настройки доступными из консоли для изменения в реальном времени
     window.updateColors = () => {
-        particles.material.uniforms.color0.value.copy(colorSettings.color0);
-        particles.material.uniforms.color1.value.copy(colorSettings.color1);
+        // Обновляем градиент
+        colorSettings.gradientTop.set(
+            CONFIG.gradient.topColor.r / 255,
+            CONFIG.gradient.topColor.g / 255,
+            CONFIG.gradient.topColor.b / 255
+        );
+        colorSettings.gradientBottom.set(
+            CONFIG.gradient.bottomColor.r / 255,
+            CONFIG.gradient.bottomColor.g / 255,
+            CONFIG.gradient.bottomColor.b / 255
+        );
+        
+        particles.material.uniforms.gradientTop.value.copy(colorSettings.gradientTop);
+        particles.material.uniforms.gradientBottom.value.copy(colorSettings.gradientBottom);
+        particles.material.uniforms.gradientIntensity.value = CONFIG.gradient.intensity;
+        particles.material.uniforms.gradientBlendStart.value = CONFIG.gradient.blendStart;
+        particles.material.uniforms.gradientBlendEnd.value = CONFIG.gradient.blendEnd;
         particles.material.uniforms.size0.value = colorSettings.size0;
         particles.material.uniforms.size1.value = colorSettings.size1;
         particles.material.uniforms.shadowIntensity.value = colorSettings.shadowIntensity;
         
         // Обновляем цвета фоновых частиц
+        colorSettings.bgColor0.set(
+            CONFIG.backgroundColors.color0.r / 255,
+            CONFIG.backgroundColors.color0.g / 255,
+            CONFIG.backgroundColors.color0.b / 255
+        );
+        colorSettings.bgColor1.set(
+            CONFIG.backgroundColors.color1.r / 255,
+            CONFIG.backgroundColors.color1.g / 255,
+            CONFIG.backgroundColors.color1.b / 255
+        );
+        
         if (backgroundParticles) {
             backgroundParticles.material.uniforms.bgColor0.value.copy(colorSettings.bgColor0);
             backgroundParticles.material.uniforms.bgColor1.value.copy(colorSettings.bgColor1);
         }
     };
+    window.CONFIG = CONFIG;
     window.colorSettings = colorSettings;
 
     // Загружаем модель мозга
-    loadModelPattern('assets/brain6/scene.gltf', PARTICLE_COUNT)
+    loadModelPattern('assets/brain6/scene.gltf', CONFIG.particleCount)
         .then((data) => {
             applyPattern(data.points, data.normals);
         })
@@ -472,10 +565,16 @@ function applyPattern(pts, normals){
     const particleArr = particles.geometry.attributes.position.array;
     const digitArr = particles.geometry.attributes.digit.array;
     const shadowFactorArr = particles.geometry.attributes.shadowFactor.array;
+    const heightFactorArr = particles.geometry.attributes.heightFactor.array;
     
     // Создаем матрицы поворота
     const rotationMatrix = new THREE.Matrix4();
-    rotationMatrix.makeRotationFromEuler(new THREE.Euler(MODEL_ROTATION.x, MODEL_ROTATION.y, MODEL_ROTATION.z, 'XYZ'));
+    rotationMatrix.makeRotationFromEuler(new THREE.Euler(
+        CONFIG.modelRotation.x,
+        CONFIG.modelRotation.y,
+        CONFIG.modelRotation.z,
+        'XYZ'
+    ));
     const normalRotationMatrix = new THREE.Matrix3().getNormalMatrix(rotationMatrix);
     
     // Применяем поворот к точкам и нормалям
@@ -493,11 +592,25 @@ function applyPattern(pts, normals){
         rotatedNormals.push(n ? n.clone().applyMatrix3(normalRotationMatrix).normalize() : new THREE.Vector3(0, 1, 0));
     }
     
-    // Направление света (сверху-спереди-слева)
-    const lightDir = new THREE.Vector3(0.3, 1.0, 0.5).normalize();
+    // Находим границы модели для вычисления градиента
+    let minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < rotatedPts.length; i++) {
+        if (rotatedPts[i]) {
+            minY = Math.min(minY, rotatedPts[i].y);
+            maxY = Math.max(maxY, rotatedPts[i].y);
+        }
+    }
+    const heightRange = maxY - minY || 1.0;
+    
+    // Направление света
+    const lightDir = new THREE.Vector3(
+        CONFIG.lighting.lightDirection.x,
+        CONFIG.lighting.lightDirection.y,
+        CONFIG.lighting.lightDirection.z
+    ).normalize();
     
     // Обрабатываем все точки
-    for (let j = 0; j < PARTICLE_COUNT; j++) {
+    for (let j = 0; j < CONFIG.particleCount; j++) {
         const idx = j * 3;
         const p = rotatedPts[j];
         const n = rotatedNormals[j];
@@ -509,20 +622,17 @@ function applyPattern(pts, normals){
         
         digitArr[j] = hashPosition(p.x, p.y, p.z);
         
-        // Освещение на основе нормалей (Lambertian)
-        // dot(normal, lightDir) даёт освещённость: 1 = полностью освещено, -1 = в тени
-        const NdotL = n.dot(lightDir);
+        // Вычисляем нормализованную высоту для градиента (0.0 = верх, 1.0 = низ)
+        const normalizedHeight = heightRange > 0 ? (p.y - minY) / heightRange : 0.5;
+        heightFactorArr[j] = normalizedHeight;
         
-        // Преобразуем в диапазон [0, 1] с мягким переходом
-        // Используем half-lambert для более мягких теней
+        // Освещение на основе нормалей (Lambertian)
+        const NdotL = n.dot(lightDir);
         const halfLambert = NdotL * 0.5 + 0.5;
         
         // Применяем интенсивность теней
-        // shadowIntensity контролирует контраст между светом и тенью
         const ambient = 1.0 - colorSettings.shadowIntensity;
         let shadowFactor = ambient + halfLambert * colorSettings.shadowIntensity;
-        
-        // Ограничиваем диапазон
         shadowFactor = Math.max(0.05, Math.min(1.0, shadowFactor));
         
         shadowFactorArr[j] = shadowFactor;
@@ -531,6 +641,7 @@ function applyPattern(pts, normals){
     particles.geometry.attributes.position.needsUpdate = true;
     particles.geometry.attributes.digit.needsUpdate = true;
     particles.geometry.attributes.shadowFactor.needsUpdate = true;
+    particles.geometry.attributes.heightFactor.needsUpdate = true;
 }
 
 function animate() {
@@ -545,7 +656,7 @@ function animate() {
         const velArr = backgroundParticles.userData.velocity;
         const radArr = backgroundParticles.userData.radius;
         
-        for (let i = 0; i < BACKGROUND_PARTICLE_COUNT; i++) {
+        for (let i = 0; i < CONFIG.backgroundParticleCount; i++) {
             const i3 = i * 3;
             // Обновляем позицию
             posArr[i3] += velArr[i3] * dt * 10;
