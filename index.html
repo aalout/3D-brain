@@ -16,9 +16,6 @@
         font-family: "Inter", sans-serif;
         overflow: hidden;
         background: #040307; 
-        background-image:
-            radial-gradient(circle at 50% 35%, #1d1431 0%, transparent 65%),
-            linear-gradient(180deg, #000000 0%, #070012 100%);
         color: #eee;
     }
     #container {
@@ -56,109 +53,6 @@
         box-shadow: 0 4px 20px rgba(0,0,0,.45);
     }
 
-    .performance-panel {
-        position: fixed;
-        right: 24px;
-        top: 24px;
-        padding: 16px 20px;
-        font-size: 11px;
-        font-family: 'Courier New', monospace;
-        pointer-events: none;
-        color: #d0b0ff;
-        background: rgba(18, 15, 40, 0.4);
-        border: 1px solid rgba(122, 70, 255, 0.28);
-        border-radius: 12px;
-        backdrop-filter: blur(12px);
-        z-index: 10;
-        box-shadow: 0 4px 20px rgba(0,0,0,.45);
-        min-width: 200px;
-        line-height: 1.6;
-    }
-
-    .performance-panel .metric {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 4px;
-    }
-
-    .performance-panel .metric-label {
-        color: #a0a0a0;
-    }
-
-    .performance-panel .metric-value {
-        color: #d0b0ff;
-        font-weight: 500;
-    }
-
-    .performance-panel .metric-value.good {
-        color: #2af16b;
-    }
-
-    .performance-panel .metric-value.warning {
-        color: #ffaa00;
-    }
-
-    .performance-panel .metric-value.bad {
-        color: #ff4444;
-    }
-
-    .performance-panel .separator {
-        height: 1px;
-        background: rgba(122, 70, 255, 0.2);
-        margin: 8px 0;
-    }
-
-    .performance-toggle {
-        position: fixed;
-        right: 24px;
-        top: 24px;
-        width: 48px;
-        height: 48px;
-        border-radius: 50%;
-        background: rgba(18, 15, 40, 0.6);
-        border: 2px solid rgba(122, 70, 255, 0.5);
-        color: #d0b0ff;
-        font-size: 20px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        z-index: 11;
-        backdrop-filter: blur(12px);
-        box-shadow: 0 4px 20px rgba(0,0,0,.45);
-        transition: all 0.3s ease;
-        user-select: none;
-        -webkit-tap-highlight-color: transparent;
-    }
-
-    .performance-toggle:hover {
-        background: rgba(18, 15, 40, 0.8);
-        border-color: rgba(122, 70, 255, 0.8);
-        transform: scale(1.1);
-    }
-
-    .performance-toggle:active {
-        transform: scale(0.95);
-    }
-
-    /* Показываем кнопку только на мобильных */
-    @media (min-width: 768px) {
-        .performance-toggle {
-            display: none;
-        }
-    }
-
-    /* На мобильных скрываем панель по умолчанию, показываем кнопку */
-    @media (max-width: 767px) {
-        .performance-panel {
-            right: 12px;
-            top: 80px;
-            font-size: 10px;
-            padding: 12px 16px;
-            min-width: 160px;
-        }
-    }
-
 </style>
 
 <script type="importmap">
@@ -172,66 +66,14 @@
 
 <div id="container"></div>
 <div class="vignette"></div>
-<div class="instructions">Drag to explore</div>
-<button class="performance-toggle" id="performanceToggle" aria-label="Toggle performance monitor">📊</button>
-<div class="performance-panel" id="performancePanel" style="display: none;">
-    <div class="metric">
-        <span class="metric-label">FPS:</span>
-        <span class="metric-value" id="fps">--</span>
-    </div>
-    <div class="metric">
-        <span class="metric-label">Frame Time:</span>
-        <span class="metric-value" id="frameTime">--</span>
-    </div>
-    <div class="separator"></div>
-    <div class="metric">
-        <span class="metric-label">Particles:</span>
-        <span class="metric-value" id="particleCount">--</span>
-    </div>
-    <div class="metric">
-        <span class="metric-label">Background:</span>
-        <span class="metric-value" id="bgParticleCount">--</span>
-    </div>
-    <div class="metric">
-        <span class="metric-label">Total:</span>
-        <span class="metric-value" id="totalParticles">--</span>
-    </div>
-    <div class="separator"></div>
-    <div class="metric">
-        <span class="metric-label">Draw Calls:</span>
-        <span class="metric-value" id="drawCalls">--</span>
-    </div>
-    <div class="metric">
-        <span class="metric-label">Triangles:</span>
-        <span class="metric-value" id="triangles">--</span>
-    </div>
-    <div class="metric">
-        <span class="metric-label">Points:</span>
-        <span class="metric-value" id="points">--</span>
-    </div>
-    <div class="separator"></div>
-    <div class="metric">
-        <span class="metric-label">Memory (MB):</span>
-        <span class="metric-value" id="memory">--</span>
-    </div>
-    <div class="metric">
-        <span class="metric-label">Status:</span>
-        <span class="metric-value" id="status">--</span>
-    </div>
-</div>
+<div class="instructions"></div>
 
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-// ============================================================================
-// КОНФИГУРАЦИЯ
-// ============================================================================
-
-// Количество частиц
 const CONFIG = {
-    particleCount: 39575,
     backgroundParticleCount: 5000,
     digitSizeMultiplier: 1.2,
     
@@ -242,35 +84,34 @@ const CONFIG = {
         z: Math.PI
     },
     
-    // Цвета градиента (RGB 0-255, конвертируются в 0-1)
+    // Цвета градиента (RGB 0-255)
     gradient: {
-        topColor: { r: 42, g: 241, b: 107 },      // Белый (верх)
-        bottomColor: { r: 255, g: 255, b: 255 },    // #2AF16B (низ)
-        intensity: 1.0,                             // Интенсивность градиента (0.0 - нет градиента, 1.0 - полный)
-        blendStart: 0.2,                            // Начало градиента (0.0 = верх, 1.0 = низ)
-        blendEnd: 1.0                              // Конец градиента (0.0 = верх, 1.0 = низ)
+        topColor: { r: 42, g: 241, b: 107 },
+        bottomColor: { r: 255, g: 255, b: 255 },
+        intensity: 1.0,
+        blendStart: 0.2,
+        blendEnd: 1.0
     },
     
     // Цвета для фоновых частиц
     backgroundColors: {
-        color0: { r: 255, g: 255, b: 255 },         // Цвет для фоновых нулей
-        color1: { r: 42, g: 241, b: 107 }          // Цвет для фоновых единиц
+        color0: { r: 255, g: 255, b: 255 },
+        color1: { r: 42, g: 241, b: 107 }
     },
     
     // Размеры частиц
     particleSizes: {
-        size0: 1.0,                                 // Размер нулей
-        size1: 1.0                                 // Размер единиц
+        size0: 1.0,
+        size1: 1.0
     },
     
     // Освещение и тени
     lighting: {
-        shadowIntensity: 0.95,                      // Интенсивность теней (0.0 - нет теней, 1.0 - максимальные)
-        lightDirection: { x: 0.3, y: 1.0, z: 0.5 }  // Направление света (нормализуется автоматически)
+        shadowIntensity: 0.95,
+        lightDirection: { x: 0.3, y: 1.0, z: 0.5 }
     }
 };
 
-// Преобразуем цвета в Vector3 для Three.js
 const colorSettings = {
     gradientTop: new THREE.Vector3(
         CONFIG.gradient.topColor.r / 255,
@@ -302,289 +143,6 @@ let particles, backgroundParticles;
 let clock = new THREE.Clock();
 let digitTexture0, digitTexture1;
 
-// ============================================================================
-// СИСТЕМА МОНИТОРИНГА ПРОИЗВОДИТЕЛЬНОСТИ
-// ============================================================================
-
-const PerformanceMonitor = {
-    enabled: false,
-    fps: 0,
-    frameTime: 0,
-    frameCount: 0,
-    lastTime: performance.now(),
-    fpsHistory: [],
-    maxHistoryLength: 60,
-    
-    init() {
-        const panel = document.getElementById('performancePanel');
-        const toggleBtn = document.getElementById('performanceToggle');
-        
-        // Функция переключения панели
-        const togglePanel = () => {
-            this.enabled = !this.enabled;
-            panel.style.display = this.enabled ? 'block' : 'none';
-            if (toggleBtn) {
-                toggleBtn.style.opacity = this.enabled ? '0.7' : '1';
-            }
-        };
-        
-        // Показываем панель при нажатии на P (десктоп)
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'p' || e.key === 'P') {
-                togglePanel();
-            }
-        });
-        
-        // Обработчик для кнопки (мобильные)
-        if (toggleBtn) {
-            toggleBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                togglePanel();
-            });
-            
-            // Предотвращаем конфликт с OrbitControls
-            toggleBtn.addEventListener('touchstart', (e) => {
-                e.stopPropagation();
-            });
-        }
-        
-        // Определяем мобильное устройство
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
-            || (window.innerWidth <= 768);
-        
-        // На мобильных показываем кнопку, на десктопе - только по нажатию P
-        if (isMobile && toggleBtn) {
-            toggleBtn.style.display = 'flex';
-        }
-        
-        // Показываем подсказку в консоли
-        console.log('%c📊 Performance Monitor', 'color: #2af16b; font-size: 14px; font-weight: bold;');
-        if (isMobile) {
-            console.log('Нажмите на кнопку 📊 в правом верхнем углу для показа/скрытия панели');
-        } else {
-            console.log('Нажмите P для показа/скрытия панели производительности');
-        }
-        console.log('Используйте PerformanceMonitor.getStats() для получения статистики');
-        console.log('Используйте PerformanceMonitor.getOptimizationTips() для рекомендаций');
-        console.log('Используйте PerformanceMonitor.printOptimizationTips() для вывода рекомендаций');
-        
-        // Выводим начальную оценку
-        setTimeout(() => {
-            this.printOptimizationTips();
-            this.printProductionReadiness();
-        }, 2000);
-    },
-    
-    update() {
-        if (!this.enabled) return;
-        
-        const now = performance.now();
-        const delta = now - this.lastTime;
-        this.frameCount++;
-        
-        if (delta >= 1000) {
-            this.fps = Math.round((this.frameCount * 1000) / delta);
-            this.frameTime = (delta / this.frameCount).toFixed(2);
-            
-            this.fpsHistory.push(this.fps);
-            if (this.fpsHistory.length > this.maxHistoryLength) {
-                this.fpsHistory.shift();
-            }
-            
-            this.frameCount = 0;
-            this.lastTime = now;
-            
-            this.updateUI();
-        }
-    },
-    
-    updateUI() {
-        const fpsEl = document.getElementById('fps');
-        const frameTimeEl = document.getElementById('frameTime');
-        const particleCountEl = document.getElementById('particleCount');
-        const bgParticleCountEl = document.getElementById('bgParticleCount');
-        const totalParticlesEl = document.getElementById('totalParticles');
-        const drawCallsEl = document.getElementById('drawCalls');
-        const trianglesEl = document.getElementById('triangles');
-        const pointsEl = document.getElementById('points');
-        const memoryEl = document.getElementById('memory');
-        const statusEl = document.getElementById('status');
-        
-        // FPS
-        fpsEl.textContent = this.fps;
-        fpsEl.className = 'metric-value ' + this.getFpsClass(this.fps);
-        
-        // Frame Time
-        frameTimeEl.textContent = this.frameTime + ' ms';
-        frameTimeEl.className = 'metric-value ' + this.getFrameTimeClass(parseFloat(this.frameTime));
-        
-        // Particle counts
-        if (particles) {
-            particleCountEl.textContent = CONFIG.particleCount.toLocaleString();
-            bgParticleCountEl.textContent = CONFIG.backgroundParticleCount.toLocaleString();
-            totalParticlesEl.textContent = (CONFIG.particleCount + CONFIG.backgroundParticleCount).toLocaleString();
-        }
-        
-        // Renderer info
-        if (renderer && renderer.info) {
-            const info = renderer.info;
-            drawCallsEl.textContent = info.render.calls || 'N/A';
-            trianglesEl.textContent = (info.render.triangles || 0).toLocaleString();
-            pointsEl.textContent = (info.render.points || 0).toLocaleString();
-        }
-        
-        // Memory (если доступно)
-        if (performance.memory) {
-            const memoryMB = (performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2);
-            memoryEl.textContent = memoryMB;
-        } else {
-            memoryEl.textContent = 'N/A';
-        }
-        
-        // Status
-        const status = this.getStatus();
-        statusEl.textContent = status.text;
-        statusEl.className = 'metric-value ' + status.class;
-    },
-    
-    getFpsClass(fps) {
-        if (fps >= 55) return 'good';
-        if (fps >= 30) return 'warning';
-        return 'bad';
-    },
-    
-    getFrameTimeClass(frameTime) {
-        if (frameTime <= 18) return 'good';  // ~60 FPS
-        if (frameTime <= 33) return 'warning'; // ~30 FPS
-        return 'bad';
-    },
-    
-    getStatus() {
-        const avgFps = this.fpsHistory.length > 0 
-            ? this.fpsHistory.reduce((a, b) => a + b, 0) / this.fpsHistory.length 
-            : this.fps;
-        
-        if (avgFps >= 55) {
-            return { text: 'Отлично', class: 'good' };
-        } else if (avgFps >= 30) {
-            return { text: 'Нормально', class: 'warning' };
-        } else {
-            return { text: 'Требует оптимизации', class: 'bad' };
-        }
-    },
-    
-    getStats() {
-        const avgFps = this.fpsHistory.length > 0 
-            ? this.fpsHistory.reduce((a, b) => a + b, 0) / this.fpsHistory.length 
-            : this.fps;
-        const minFps = this.fpsHistory.length > 0 ? Math.min(...this.fpsHistory) : this.fps;
-        const maxFps = this.fpsHistory.length > 0 ? Math.max(...this.fpsHistory) : this.fps;
-        
-        return {
-            currentFps: this.fps,
-            averageFps: Math.round(avgFps),
-            minFps,
-            maxFps,
-            frameTime: parseFloat(this.frameTime),
-            particleCount: CONFIG.particleCount,
-            backgroundParticleCount: CONFIG.backgroundParticleCount,
-            totalParticles: CONFIG.particleCount + CONFIG.backgroundParticleCount
-        };
-    },
-    
-    getOptimizationTips() {
-        const stats = this.getStats();
-        const tips = [];
-        
-        if (stats.averageFps < 30) {
-            tips.push('⚠️ Низкий FPS. Рекомендации:');
-            tips.push('  • Уменьшите CONFIG.particleCount (текущее: ' + CONFIG.particleCount + ')');
-            tips.push('  • Уменьшите CONFIG.backgroundParticleCount (текущее: ' + CONFIG.backgroundParticleCount + ')');
-            tips.push('  • Уменьшите CONFIG.digitSizeMultiplier для меньших частиц');
-            tips.push('  • Отключите antialiasing в renderer');
-        }
-        
-        if (stats.totalParticles > 50000) {
-            tips.push('⚠️ Большое количество частиц: ' + stats.totalParticles);
-            tips.push('  • Рассмотрите LOD (Level of Detail) систему');
-            tips.push('  • Используйте frustum culling');
-        }
-        
-        if (renderer && renderer.info && renderer.info.render.calls > 10) {
-            tips.push('⚠️ Много draw calls: ' + renderer.info.render.calls);
-            tips.push('  • Объедините геометрии где возможно');
-        }
-        
-        if (tips.length === 0) {
-            tips.push('✅ Производительность в норме!');
-        }
-        
-        return tips;
-    },
-    
-    printOptimizationTips() {
-        const tips = this.getOptimizationTips();
-        console.log('%c💡 Рекомендации по оптимизации:', 'color: #ffaa00; font-size: 12px; font-weight: bold;');
-        tips.forEach(tip => console.log(tip));
-    },
-    
-    printProductionReadiness() {
-        const stats = this.getStats();
-        const issues = [];
-        const warnings = [];
-        
-        // Проверяем FPS
-        if (stats.averageFps < 30) {
-            issues.push('FPS ниже 30 (' + stats.averageFps + ')');
-        } else if (stats.averageFps < 55) {
-            warnings.push('FPS ниже 55 (' + stats.averageFps + ')');
-        }
-        
-        // Проверяем количество частиц
-        if (stats.totalParticles > 100000) {
-            issues.push('Слишком много частиц: ' + stats.totalParticles);
-        } else if (stats.totalParticles > 50000) {
-            warnings.push('Много частиц: ' + stats.totalParticles + ' (может быть тяжело на слабых устройствах)');
-        }
-        
-        // Проверяем frame time
-        if (stats.frameTime > 33) {
-            issues.push('Frame time слишком высокий: ' + stats.frameTime + 'ms');
-        } else if (stats.frameTime > 18) {
-            warnings.push('Frame time выше оптимального: ' + stats.frameTime + 'ms');
-        }
-        
-        console.log('%c🚀 Оценка готовности к продакшену:', 'color: #2af16b; font-size: 12px; font-weight: bold;');
-        
-        if (issues.length === 0 && warnings.length === 0) {
-            console.log('%c✅ Готово к продакшену!', 'color: #2af16b; font-weight: bold;');
-            console.log('  • FPS: ' + stats.averageFps + ' (отлично)');
-            console.log('  • Частиц: ' + stats.totalParticles);
-            console.log('  • Frame time: ' + stats.frameTime + 'ms');
-        } else {
-            if (issues.length > 0) {
-                console.log('%c❌ Критические проблемы:', 'color: #ff4444; font-weight: bold;');
-                issues.forEach(issue => console.log('  • ' + issue));
-            }
-            if (warnings.length > 0) {
-                console.log('%c⚠️ Предупреждения:', 'color: #ffaa00; font-weight: bold;');
-                warnings.forEach(warning => console.log('  • ' + warning));
-            }
-            console.log('%c💡 Используйте PerformanceMonitor.getOptimizationTips() для рекомендаций', 'color: #d0b0ff;');
-        }
-        
-        return {
-            ready: issues.length === 0,
-            issues,
-            warnings,
-            stats
-        };
-    }
-};
-
-// Экспортируем для доступа из консоли
-window.PerformanceMonitor = PerformanceMonitor;
-
 function normalise(points, size) {
     if (points.length === 0) return [];
     const box = new THREE.Box3().setFromPoints(points);
@@ -593,8 +151,7 @@ function normalise(points, size) {
     return points.map(p => p.clone().sub(centre).multiplyScalar(size / maxDim));
 }
 
-// Функция для извлечения вершин и нормалей из 3D модели
-async function loadModelPattern(modelPath, targetCount) {
+async function loadModelPattern(modelPath) {
     return new Promise((resolve, reject) => {
         const loader = new GLTFLoader();
         loader.load(
@@ -603,19 +160,16 @@ async function loadModelPattern(modelPath, targetCount) {
                 const points = [];
                 const normals = [];
                 
-                // Рекурсивно обходим все меши в модели
                 gltf.scene.traverse((child) => {
                     if (child.isMesh) {
                         const geometry = child.geometry;
                         const positionAttribute = geometry.attributes.position;
                         const normalAttribute = geometry.attributes.normal;
                         
-                        // Получаем мировую матрицу для правильного позиционирования
                         child.updateMatrixWorld();
                         const worldMatrix = child.matrixWorld;
                         const normalMatrix = new THREE.Matrix3().getNormalMatrix(worldMatrix);
                         
-                        // Извлекаем все вершины и нормали
                         for (let i = 0; i < positionAttribute.count; i++) {
                             const vertex = new THREE.Vector3().fromBufferAttribute(positionAttribute, i);
                             vertex.applyMatrix4(worldMatrix);
@@ -632,48 +186,14 @@ async function loadModelPattern(modelPath, targetCount) {
                     }
                 });
                 
-                // Выводим информацию о количестве вершин в консоль
-                const uniqueVertexCount = points.length;
-                console.log(`📊 Модель содержит ${uniqueVertexCount} уникальных вершин`);
-                console.log(`🎯 Запрошено частиц: ${targetCount}`);
-                
-                if (uniqueVertexCount < targetCount) {
-                    console.warn(`⚠️ Количество частиц (${targetCount}) больше количества вершин модели (${uniqueVertexCount}). Будут использованы дубликаты.`);
-                    console.log(`💡 Рекомендуется установить CONFIG.particleCount <= ${uniqueVertexCount} для избежания дублирования`);
-                } else {
-                    console.log(`✅ Достаточно вершин для ${targetCount} частиц`);
-                }
-                
-                // Равномерный выбор вершин для сохранения формы
-                const resultPoints = [];
-                const resultNormals = [];
                 if (points.length === 0) {
                     reject(new Error('Модель не содержит вершин'));
                     return;
                 }
                 
-                if (points.length >= targetCount) {
-                    const step = points.length / targetCount;
-                    for (let i = 0; i < targetCount; i++) {
-                        const idx = Math.floor(i * step);
-                        resultPoints.push(points[idx].clone());
-                        resultNormals.push(normals[idx].clone());
-                    }
-                } else {
-                    resultPoints.push(...points.map(p => p.clone()));
-                    resultNormals.push(...normals.map(n => n.clone()));
-                    
-                    while (resultPoints.length < targetCount) {
-                        const idx = resultPoints.length % points.length;
-                        resultPoints.push(points[idx].clone());
-                        resultNormals.push(normals[idx].clone());
-                    }
-                }
+                const normalizedPoints = normalise(points, 50);
                 
-                // Нормализуем позиции
-                const normalizedPoints = normalise(resultPoints, 50);
-                
-                resolve({ points: normalizedPoints, normals: resultNormals });
+                resolve({ points: normalizedPoints, normals: normals });
             },
             undefined,
             (error) => {
@@ -693,11 +213,10 @@ function createTextTexture(text, size = 256) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     
-    // Если это "1", поворачиваем на 180 градусов и отзеркаливаем
     if (text === '1') {
         ctx.translate(size / 2, size / 2);
         ctx.rotate(Math.PI);
-        ctx.scale(-1, 1); // Отзеркаливаем по горизонтали
+        ctx.scale(-1, 1);
         ctx.translate(-size / 2, -size / 2);
     }
     
@@ -707,11 +226,9 @@ function createTextTexture(text, size = 256) {
     return texture;
 }
 
-// Простая хеш-функция для детерминированного присвоения цифр на основе позиции
 function hashPosition(x, y, z) {
-    // Используем простую хеш-функцию для получения детерминированного значения
     const hash = ((x * 73856093) ^ (y * 19349663) ^ (z * 83492791)) >>> 0;
-    return hash % 2; // Возвращает 0 или 1
+    return hash % 2;
 }
 
 function makeParticles(count) {
@@ -720,13 +237,13 @@ function makeParticles(count) {
     const size = new Float32Array(count);
     const digit = new Float32Array(count);
     const shadowFactor = new Float32Array(count);
-    const heightFactor = new Float32Array(count); // Нормализованная высота для градиента
+    const heightFactor = new Float32Array(count);
     
     for (let i = 0; i < count; i++) {
         size[i] = 2.0;
         digit[i] = 0.0;
         shadowFactor[i] = 1.0;
-        heightFactor[i] = 0.5; // Временное значение, будет обновлено в applyPattern
+        heightFactor[i] = 0.5;
     }
     
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
@@ -785,15 +302,11 @@ function makeParticles(count) {
                 vec4 texColor = vDigit < 0.5 ? texture2D(texture0, uv) : texture2D(texture1, uv);
                 if (texColor.a < 0.01) discard;
                 
-                // Вычисляем градиент на основе высоты
-                // vHeightFactor: 0.0 = верх (белый), 1.0 = низ (#2AF16B)
                 float gradientT = clamp((vHeightFactor - gradientBlendStart) / (gradientBlendEnd - gradientBlendStart), 0.0, 1.0);
                 vec3 gradientColor = mix(gradientTop, gradientBottom, gradientT);
                 
-                // Применяем интенсивность градиента
                 vec3 baseColor = mix(gradientTop, gradientColor, gradientIntensity);
                 
-                // Тени через opacity
                 float finalOpacity = texColor.a * vShadowFactor;
                 
                 gl_FragColor = vec4(baseColor, finalOpacity);
@@ -805,7 +318,6 @@ function makeParticles(count) {
     return new THREE.Points(geo, mat);
 }
 
-// Создает фоновые частицы, которые летают вокруг модели
 function createBackgroundParticles(count) {
     const geo = new THREE.BufferGeometry();
     const pos = new Float32Array(count * 3);
@@ -814,10 +326,9 @@ function createBackgroundParticles(count) {
     const velocity = new Float32Array(count * 3);
     const radius = new Float32Array(count);
     
-    const R = 120; // Радиус сферы вокруг модели
+    const R = 120;
 
     for (let i = 0; i < count; i++) {
-        // Случайная позиция на сфере
         const θ = Math.random() * 2 * Math.PI;
         const φ = Math.acos(2 * Math.random() - 1);
         const r = R + (Math.random() - 0.5) * 40;
@@ -826,7 +337,6 @@ function createBackgroundParticles(count) {
         pos[i * 3 + 1] = r * Math.sin(φ) * Math.sin(θ);
         pos[i * 3 + 2] = r * Math.cos(φ);
         
-        // Случайная скорость
         velocity[i * 3] = (Math.random() - 0.5) * 0.5;
         velocity[i * 3 + 1] = (Math.random() - 0.5) * 0.5;
         velocity[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
@@ -871,7 +381,6 @@ function createBackgroundParticles(count) {
                 vec4 texColor = vDigit < 0.5 ? texture2D(texture0, uv) : texture2D(texture1, uv);
                 if (texColor.a < 0.01) discard;
                 
-                // Выбираем цвет в зависимости от цифры
                 vec3 baseColor = vDigit < 0.5 ? bgColor0 : bgColor1;
                 
                 gl_FragColor = vec4(baseColor, texColor.a * 0.7);
@@ -900,12 +409,14 @@ function init() {
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(devicePixelRatio);
     renderer.setSize(innerWidth, innerHeight);
-    renderer.info.autoReset = false; // Отключаем автосброс для мониторинга
     document.getElementById("container").appendChild(renderer.domElement);
 
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
+    controls.enableRotate = false;
+    controls.enableZoom = false;
+    controls.enablePan = false;
     controls.screenSpacePanning = false;
     controls.minDistance = 20;
     controls.maxDistance = 200;
@@ -913,97 +424,44 @@ function init() {
     controls.autoRotate = true;
     controls.autoRotateSpeed = 0.5;
 
-    particles = makeParticles(CONFIG.particleCount);
-    // Применяем настройки
-    particles.material.uniforms.gradientTop.value = colorSettings.gradientTop;
-    particles.material.uniforms.gradientBottom.value = colorSettings.gradientBottom;
-    particles.material.uniforms.gradientIntensity.value = CONFIG.gradient.intensity;
-    particles.material.uniforms.gradientBlendStart.value = CONFIG.gradient.blendStart;
-    particles.material.uniforms.gradientBlendEnd.value = CONFIG.gradient.blendEnd;
-    particles.material.uniforms.size0.value = colorSettings.size0;
-    particles.material.uniforms.size1.value = colorSettings.size1;
-    particles.material.uniforms.shadowIntensity.value = colorSettings.shadowIntensity;
-    
-    scene.add(particles);
-    
-    // Создаем фоновые летающие частицы
     backgroundParticles = createBackgroundParticles(CONFIG.backgroundParticleCount);
     backgroundParticles.material.uniforms.bgColor0.value = colorSettings.bgColor0;
     backgroundParticles.material.uniforms.bgColor1.value = colorSettings.bgColor1;
     scene.add(backgroundParticles);
-    
-    // Делаем настройки доступными из консоли для изменения в реальном времени
-    window.updateColors = () => {
-        // Обновляем градиент
-        colorSettings.gradientTop.set(
-            CONFIG.gradient.topColor.r / 255,
-            CONFIG.gradient.topColor.g / 255,
-            CONFIG.gradient.topColor.b / 255
-        );
-        colorSettings.gradientBottom.set(
-            CONFIG.gradient.bottomColor.r / 255,
-            CONFIG.gradient.bottomColor.g / 255,
-            CONFIG.gradient.bottomColor.b / 255
-        );
-        
-        particles.material.uniforms.gradientTop.value.copy(colorSettings.gradientTop);
-        particles.material.uniforms.gradientBottom.value.copy(colorSettings.gradientBottom);
-        particles.material.uniforms.gradientIntensity.value = CONFIG.gradient.intensity;
-        particles.material.uniforms.gradientBlendStart.value = CONFIG.gradient.blendStart;
-        particles.material.uniforms.gradientBlendEnd.value = CONFIG.gradient.blendEnd;
-        particles.material.uniforms.size0.value = colorSettings.size0;
-        particles.material.uniforms.size1.value = colorSettings.size1;
-        particles.material.uniforms.shadowIntensity.value = colorSettings.shadowIntensity;
-        
-        // Обновляем цвета фоновых частиц
-        colorSettings.bgColor0.set(
-            CONFIG.backgroundColors.color0.r / 255,
-            CONFIG.backgroundColors.color0.g / 255,
-            CONFIG.backgroundColors.color0.b / 255
-        );
-        colorSettings.bgColor1.set(
-            CONFIG.backgroundColors.color1.r / 255,
-            CONFIG.backgroundColors.color1.g / 255,
-            CONFIG.backgroundColors.color1.b / 255
-        );
-        
-        if (backgroundParticles) {
-            backgroundParticles.material.uniforms.bgColor0.value.copy(colorSettings.bgColor0);
-            backgroundParticles.material.uniforms.bgColor1.value.copy(colorSettings.bgColor1);
-        }
-    };
-    window.CONFIG = CONFIG;
-    window.colorSettings = colorSettings;
 
-    // Загружаем модель мозга
-    loadModelPattern('assets/brain6/scene.gltf', CONFIG.particleCount)
+    loadModelPattern('assets/brain7/1234.gltf')
         .then((data) => {
+            const particleCount = data.points.length;
+            particles = makeParticles(particleCount);
+            particles.material.uniforms.gradientTop.value = colorSettings.gradientTop;
+            particles.material.uniforms.gradientBottom.value = colorSettings.gradientBottom;
+            particles.material.uniforms.gradientIntensity.value = CONFIG.gradient.intensity;
+            particles.material.uniforms.gradientBlendStart.value = CONFIG.gradient.blendStart;
+            particles.material.uniforms.gradientBlendEnd.value = CONFIG.gradient.blendEnd;
+            particles.material.uniforms.size0.value = colorSettings.size0;
+            particles.material.uniforms.size1.value = colorSettings.size1;
+            particles.material.uniforms.shadowIntensity.value = colorSettings.shadowIntensity;
+            
+            scene.add(particles);
             applyPattern(data.points, data.normals);
         })
-        .catch((error) => {
-            console.error('Ошибка загрузки модели:', error);
-        });
+        .catch(() => {});
 
     addEventListener("resize", () => {
         camera.aspect = innerWidth / innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(innerWidth, innerHeight);
     });
-    
-    // Инициализируем мониторинг производительности
-    PerformanceMonitor.init();
 }
 
-// Применяет точки модели к частицам
-// Использует нормали из модели для реалистичного освещения извилин
 function applyPattern(pts, normals){
     if (!pts || pts.length === 0) return;
+    const particleCount = pts.length;
     const particleArr = particles.geometry.attributes.position.array;
     const digitArr = particles.geometry.attributes.digit.array;
     const shadowFactorArr = particles.geometry.attributes.shadowFactor.array;
     const heightFactorArr = particles.geometry.attributes.heightFactor.array;
     
-    // Создаем матрицы поворота
     const rotationMatrix = new THREE.Matrix4();
     rotationMatrix.makeRotationFromEuler(new THREE.Euler(
         CONFIG.modelRotation.x,
@@ -1013,7 +471,6 @@ function applyPattern(pts, normals){
     ));
     const normalRotationMatrix = new THREE.Matrix3().getNormalMatrix(rotationMatrix);
     
-    // Применяем поворот к точкам и нормалям
     const rotatedPts = [];
     const rotatedNormals = [];
     for (let i = 0; i < pts.length; i++) {
@@ -1028,7 +485,6 @@ function applyPattern(pts, normals){
         rotatedNormals.push(n ? n.clone().applyMatrix3(normalRotationMatrix).normalize() : new THREE.Vector3(0, 1, 0));
     }
     
-    // Находим границы модели для вычисления градиента
     let minY = Infinity, maxY = -Infinity;
     for (let i = 0; i < rotatedPts.length; i++) {
         if (rotatedPts[i]) {
@@ -1038,15 +494,13 @@ function applyPattern(pts, normals){
     }
     const heightRange = maxY - minY || 1.0;
     
-    // Направление света
     const lightDir = new THREE.Vector3(
         CONFIG.lighting.lightDirection.x,
         CONFIG.lighting.lightDirection.y,
         CONFIG.lighting.lightDirection.z
     ).normalize();
     
-    // Обрабатываем все точки
-    for (let j = 0; j < CONFIG.particleCount; j++) {
+    for (let j = 0; j < particleCount; j++) {
         const idx = j * 3;
         const p = rotatedPts[j];
         const n = rotatedNormals[j];
@@ -1058,15 +512,12 @@ function applyPattern(pts, normals){
         
         digitArr[j] = hashPosition(p.x, p.y, p.z);
         
-        // Вычисляем нормализованную высоту для градиента (0.0 = верх, 1.0 = низ)
         const normalizedHeight = heightRange > 0 ? (p.y - minY) / heightRange : 0.5;
         heightFactorArr[j] = normalizedHeight;
         
-        // Освещение на основе нормалей (Lambertian)
         const NdotL = n.dot(lightDir);
         const halfLambert = NdotL * 0.5 + 0.5;
         
-        // Применяем интенсивность теней
         const ambient = 1.0 - colorSettings.shadowIntensity;
         let shadowFactor = ambient + halfLambert * colorSettings.shadowIntensity;
         shadowFactor = Math.max(0.05, Math.min(1.0, shadowFactor));
@@ -1083,15 +534,9 @@ function applyPattern(pts, normals){
 function animate() {
     requestAnimationFrame(animate);
     const dt = clock.getDelta();
-    
-    // Сбрасываем статистику рендерера для нового кадра
-    if (renderer && renderer.info) {
-        renderer.info.reset();
-    }
 
     controls.update();
 
-    // Анимация фоновых частиц - плавное движение вокруг модели
     if (backgroundParticles) {
         const posArr = backgroundParticles.geometry.attributes.position.array;
         const velArr = backgroundParticles.userData.velocity;
@@ -1099,12 +544,10 @@ function animate() {
         
         for (let i = 0; i < CONFIG.backgroundParticleCount; i++) {
             const i3 = i * 3;
-            // Обновляем позицию
             posArr[i3] += velArr[i3] * dt * 10;
             posArr[i3 + 1] += velArr[i3 + 1] * dt * 10;
             posArr[i3 + 2] += velArr[i3 + 2] * dt * 10;
             
-            // Удерживаем частицы в пределах сферы
             const dist = Math.sqrt(posArr[i3]**2 + posArr[i3+1]**2 + posArr[i3+2]**2);
             const maxDist = radArr[i] * 1.3;
             if (dist > maxDist || dist < radArr[i] * 0.7) {
@@ -1118,9 +561,6 @@ function animate() {
     }
 
     renderer.render(scene, camera);
-    
-    // Обновляем мониторинг производительности
-    PerformanceMonitor.update();
 }
 
 init();
